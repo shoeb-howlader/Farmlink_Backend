@@ -1,0 +1,14 @@
+{
+    "kalpurush": {
+        "normal": "C:\\laragon\\www\\Farmlink\\Farmlink_Backend\\storage\\fonts\/kalpurush_normal_561d9bceb047357f27dbc5e57427b62c",
+        "bold": "C:\\laragon\\www\\Farmlink\\Farmlink_Backend\\storage\\fonts\/kalpurush_bold_561d9bceb047357f27dbc5e57427b62c",
+        "600": "C:\\laragon\\www\\Farmlink\\Farmlink_Backend\\storage\\fonts\/kalpurush_600_561d9bceb047357f27dbc5e57427b62c",
+        "800": "kalpurush_800_561d9bceb047357f27dbc5e57427b62c"
+    },
+    "solaimanlipi": {
+        "normal": "solaimanlipi_normal_c3a2b20337e14b50020993eb782cb82d",
+        "bold": "C:\\laragon\\www\\Farmlink\\Farmlink_Backend\\storage\\fonts\/solaimanlipi_bold_26ff70839e322d7ecfa4079deb42793f",
+        "600": "C:\\laragon\\www\\Farmlink\\Farmlink_Backend\\storage\\fonts\/solaimanlipi_600_26ff70839e322d7ecfa4079deb42793f",
+        "800": "C:\\laragon\\www\\Farmlink\\Farmlink_Backend\\storage\\fonts\/solaimanlipi_800_26ff70839e322d7ecfa4079deb42793f"
+    }
+}

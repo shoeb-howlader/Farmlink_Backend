@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>PDF Viewer</title>
+    <script src="/pdfjs/pdf.min.js"></script>
+    <style>
+        body { margin: 0; background: #fff; font-family: sans-serif; padding: 20px; }
+        canvas { border: 1px solid #ccc; margin-bottom: 20px; display: block; }
+    </style>
+</head>
+<body>
+    <div id="status">Starting...</div>
+    <div id="container"></div>
+
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdfjs/pdf.worker.min.js';
+        
+        async function run() {
+            try {
+                const params = new URLSearchParams(window.location.search);
+                const pdfFile = params.get('pdf') || 'test_solaiman_base64.pdf';
+                document.getElementById('status').innerText = 'Fetching ' + pdfFile;
+                
+                const res = await fetch('/' + pdfFile);
+                if (!res.ok) throw new Error('Fetch failed: ' + res.status);
+                const data = await res.arrayBuffer();
+                
+                document.getElementById('status').innerText = 'Loading PDF bytes...';
+                const loadingTask = pdfjsLib.getDocument({ data: data });
+                const pdf = await loadingTask.promise;
+                
+                document.getElementById('status').innerText = 'Rendering ' + pdfFile + ' (' + pdf.numPages + ' pages)...';
+                const container = document.getElementById('container');
+                
+                for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+                    const page = await pdf.getPage(pageNum);
+                    const viewport = page.getViewport({ scale: 1.5 });
+                    
+                    const canvas = document.createElement('canvas');
+                    const context = canvas.getContext('2d');
+                    canvas.height = viewport.height;
+                    canvas.width = viewport.width;
+                    container.appendChild(canvas);
+                    
+                    await page.render({ canvasContext: context, viewport: viewport }).promise;
+                }
+                document.getElementById('status').innerText = 'COMPLETE: ' + pdfFile;
+            } catch (err) {
+                document.getElementById('status').innerText = 'ERROR: ' + err.toString();
+            }
+        }
+        run();
+    </script>
+</body>
+</html>
