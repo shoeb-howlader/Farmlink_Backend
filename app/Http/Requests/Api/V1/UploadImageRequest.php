@@ -23,9 +23,10 @@ class UploadImageRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'avatar' => ['required_without_all:image,file', 'nullable', 'file', 'image', 'mimes:jpeg,png,jpg,webp', 'max:2048'],
-            'image' => ['required_without_all:avatar,file', 'nullable', 'file', 'image', 'mimes:jpeg,png,jpg,webp', 'max:2048'],
-            'file' => ['required_without_all:avatar,image', 'nullable', 'file', 'image', 'mimes:jpeg,png,jpg,webp', 'max:2048'],
+            'photo' => ['required_without_all:avatar,image,file', 'nullable', 'file', 'image', 'mimes:jpeg,png,jpg,webp,gif', 'max:5120'],
+            'avatar' => ['required_without_all:photo,image,file', 'nullable', 'file', 'image', 'mimes:jpeg,png,jpg,webp,gif', 'max:5120'],
+            'image' => ['required_without_all:photo,avatar,file', 'nullable', 'file', 'image', 'mimes:jpeg,png,jpg,webp,gif', 'max:5120'],
+            'file' => ['required_without_all:photo,avatar,image', 'nullable', 'file', 'image', 'mimes:jpeg,png,jpg,webp,gif', 'max:5120'],
         ];
     }
 
@@ -34,6 +35,6 @@ class UploadImageRequest extends FormRequest
      */
     public function getImageFile(): UploadedFile
     {
-        return $this->file('avatar') ?? $this->file('image') ?? $this->file('file');
+        return $this->file('photo') ?? $this->file('avatar') ?? $this->file('image') ?? $this->file('file');
     }
 }

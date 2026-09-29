@@ -96,6 +96,16 @@ class OrderController extends ApiController
                 $order->loadMissing('items');
                 foreach ($order->items as $item) {
                     \App\Models\Product::where('id', $item->product_id)->increment('stock', $item->quantity);
+
+                    if ($item->product_variant_id) {
+                        \App\Models\ProductVariant::where('id', $item->product_variant_id)->increment('stock', $item->quantity);
+                    } else {
+                        $defaultVar = \App\Models\ProductVariant::where('product_id', $item->product_id)->where('is_default', true)->first()
+                            ?? \App\Models\ProductVariant::where('product_id', $item->product_id)->first();
+                        if ($defaultVar) {
+                            $defaultVar->increment('stock', $item->quantity);
+                        }
+                    }
                 }
             }
 
@@ -156,6 +166,7 @@ class OrderController extends ApiController
             'reason_note' => ['required', 'string', 'min:3', 'max:500'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.product_id' => ['required', 'integer', 'exists:products,id'],
+            'items.*.product_variant_id' => ['nullable', 'integer', 'exists:product_variants,id'],
             'items.*.quantity' => ['required', 'integer', 'min:1'],
         ]);
 
@@ -184,29 +195,51 @@ class OrderController extends ApiController
 
         $allProductIds = array_unique(array_merge(array_keys($oldQuantities), array_keys($newQuantities)));
 
-        \Illuminate\Support\Facades\DB::transaction(function () use ($order, $allProductIds, $oldQuantities, $newQuantities) {
+        \Illuminate\Support\Facades\DB::transaction(function () use ($order, $allProductIds, $oldQuantities, $newQuantities, $validated) {
             foreach ($allProductIds as $prodId) {
                 $oldQty = $oldQuantities[$prodId] ?? 0;
                 $newQty = $newQuantities[$prodId] ?? 0;
                 $delta = $newQty - $oldQty;
 
                 if ($delta > 0) {
-                    // Increasing quantity or adding new product: validate and decrement stock
-                    $decremented = \App\Models\Product::where('id', $prodId)
-                        ->where('stock', '>=', $delta)
-                        ->decrement('stock', $delta);
+                    $product = \App\Models\Product::with('variants')->find($prodId);
+                    $defaultVar = $product?->variants->firstWhere('is_default', true) ?? $product?->variants->first();
 
-                    if (! $decremented) {
-                        $product = \App\Models\Product::find($prodId);
-                        $name = $product ? $product->name : "ID #{$prodId}";
-                        $avail = $product ? $product->stock : 0;
-                        throw \Illuminate\Validation\ValidationException::withMessages([
-                            'items' => ["Insufficient stock for product: {$name}. Additional requested: {$delta}, currently in stock: {$avail}"],
-                        ]);
+                    if ($defaultVar) {
+                        $decremented = \App\Models\ProductVariant::where('id', $defaultVar->id)
+                            ->where('stock', '>=', $delta)
+                            ->decrement('stock', $delta);
+
+                        if (! $decremented) {
+                            $name = $product ? $product->name : "ID #{$prodId}";
+                            $avail = $defaultVar->stock;
+                            throw \Illuminate\Validation\ValidationException::withMessages([
+                                'items' => ["Insufficient stock for product: {$name} ({$defaultVar->variant_label}). Additional requested: {$delta}, currently in stock: {$avail}"],
+                            ]);
+                        }
+                        $product->syncAggregateStockAndPrice();
+                    } else {
+                        $decremented = \App\Models\Product::where('id', $prodId)
+                            ->where('stock', '>=', $delta)
+                            ->decrement('stock', $delta);
+
+                        if (! $decremented) {
+                            $name = $product ? $product->name : "ID #{$prodId}";
+                            $avail = $product ? $product->stock : 0;
+                            throw \Illuminate\Validation\ValidationException::withMessages([
+                                'items' => ["Insufficient stock for product: {$name}. Additional requested: {$delta}, currently in stock: {$avail}"],
+                            ]);
+                        }
                     }
                 } elseif ($delta < 0) {
-                    // Decreasing quantity or removing product: restore stock
-                    \App\Models\Product::where('id', $prodId)->increment('stock', abs($delta));
+                    $product = \App\Models\Product::with('variants')->find($prodId);
+                    $defaultVar = $product?->variants->firstWhere('is_default', true) ?? $product?->variants->first();
+                    if ($defaultVar) {
+                        \App\Models\ProductVariant::where('id', $defaultVar->id)->increment('stock', abs($delta));
+                        $product->syncAggregateStockAndPrice();
+                    } else {
+                        \App\Models\Product::where('id', $prodId)->increment('stock', abs($delta));
+                    }
                 }
             }
 
@@ -214,15 +247,18 @@ class OrderController extends ApiController
             $order->items()->delete();
             $newTotal = 0;
 
-            foreach ($newQuantities as $prodId => $qty) {
-                $product = \App\Models\Product::findOrFail($prodId);
-                $price = $product->price;
-                $subtotal = $price * $qty;
+            foreach ($validated['items'] as $item) {
+                $product = \App\Models\Product::findOrFail($item['product_id']);
+                $variantId = $item['product_variant_id'] ?? null;
+                $variant = $variantId ? \App\Models\ProductVariant::find($variantId) : ($product->defaultVariant ?? $product->variants()->first());
+                $price = $variant ? $variant->price : $product->price;
+                $subtotal = $price * $item['quantity'];
                 $newTotal += $subtotal;
 
                 $order->items()->create([
-                    'product_id' => $prodId,
-                    'quantity' => $qty,
+                    'product_id' => $product->id,
+                    'product_variant_id' => $variant?->id,
+                    'quantity' => $item['quantity'],
                     'price_at_purchase' => $price,
                 ]);
             }

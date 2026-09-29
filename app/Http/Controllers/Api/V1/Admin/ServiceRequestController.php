@@ -20,7 +20,7 @@ class ServiceRequestController extends ApiController
      */
     public function index(Request $request): JsonResponse
     {
-        $query = ServiceRequest::with(['farm', 'farmer', 'assignedPractitioner', 'fulfilledRecord'])
+        $query = ServiceRequest::with(['farm', 'farmer', 'assignedPractitioner', 'fulfilledRecord', 'parentRecord'])
             ->urgentFirst();
 
         if ($request->filled('type') && $request->query('type') !== 'all') {
@@ -28,11 +28,22 @@ class ServiceRequestController extends ApiController
         }
 
         if ($request->filled('status') && $request->query('status') !== 'all') {
-            $query->where('status', $request->query('status'));
+            $status = $request->query('status');
+            if (str_contains($status, ',')) {
+                $query->whereIn('status', array_map('trim', explode(',', $status)));
+            } elseif ($status === 'open' || $status === 'active') {
+                $query->whereIn('status', ['pending', 'assigned', 'in_progress']);
+            } else {
+                $query->where('status', $status);
+            }
         }
 
         if ($request->filled('urgency') && $request->query('urgency') !== 'all') {
             $query->where('urgency', $request->query('urgency'));
+        }
+
+        if ($request->filled('source_channel') && $request->query('source_channel') !== 'all') {
+            $query->where('source_channel', $request->query('source_channel'));
         }
 
         if ($request->filled('district') && ! in_array($request->query('district'), ['all', 'All Districts'])) {
@@ -81,6 +92,99 @@ class ServiceRequestController extends ApiController
                 'total' => $requests->total(),
             ],
         ]);
+    }
+
+    /**
+     * Display service request details (Admin & DEO).
+     */
+    public function show(ServiceRequest $serviceRequest): JsonResponse
+    {
+        $serviceRequest->loadMissing([
+            'farm',
+            'farmer',
+            'assignedPractitioner',
+            'fulfilledRecord',
+            'parentRecord',
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Service request details retrieved successfully',
+            'data' => new ServiceRequestResource($serviceRequest),
+        ]);
+    }
+
+    /**
+     * Create a service request on behalf of a farmer (phone/chat/walk-in intake).
+     */
+    public function store(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'farmer_id' => ['required', 'integer', 'exists:users,id'],
+            'farm_id' => ['required', 'integer', 'exists:farms,id'],
+            'type' => ['required', 'string', 'in:vet,consultant'],
+            'description' => ['required', 'string', 'min:5'],
+            'urgency' => ['required', 'string', 'in:normal,urgent'],
+            'source_channel' => ['required', 'string', 'in:phone_call,chat,walk_in,admin_created'],
+            'photo' => ['nullable', 'file', 'image', 'max:5120'],
+        ]);
+
+        $farm = \App\Models\Farm::findOrFail($validated['farm_id']);
+        if ($farm->user_id !== (int) $validated['farmer_id']) {
+            return $this->errorResponse('Selected farm does not belong to the selected farmer.', 422);
+        }
+
+        $farmer = User::findOrFail($validated['farmer_id']);
+
+        $photoPath = null;
+        if ($request->hasFile('photo')) {
+            $photoPath = $request->file('photo')->store('service_requests', 'public');
+        }
+
+        $serviceRequest = ServiceRequest::create([
+            'farm_id' => $farm->id,
+            'farmer_id' => $farmer->id,
+            'type' => $validated['type'],
+            'description' => $validated['description'],
+            'urgency' => $validated['urgency'],
+            'source_channel' => $validated['source_channel'],
+            'photo_path' => $photoPath,
+            'status' => 'pending',
+        ]);
+
+        ActivityLog::log(
+            'service_request.admin_created',
+            $serviceRequest,
+            [
+                'admin_id' => $request->user()->id,
+                'admin_name' => $request->user()->name,
+                'farmer_id' => $farmer->id,
+                'farmer_name' => $farmer->name,
+                'farm_id' => $farm->id,
+                'farm_name' => $farm->farm_name,
+                'source_channel' => $serviceRequest->source_channel,
+                'type' => $serviceRequest->type,
+                'urgency' => $serviceRequest->urgency,
+            ]
+        );
+
+        \App\Models\AdminNotification::notify(
+            'service_request.created_by_admin',
+            "Service Request Created: #SR-{$serviceRequest->id}",
+            "Customer support initiated a {$serviceRequest->type} service request for {$farm->farm_name} via " . str_replace('_', ' ', $serviceRequest->source_channel) . '.',
+            [
+                'service_request_id' => $serviceRequest->id,
+                'farm_id' => $farm->id,
+                'source_channel' => $serviceRequest->source_channel,
+                'type' => $serviceRequest->type,
+            ],
+            $farmer->id
+        );
+
+        return $this->createdResponse(
+            new ServiceRequestResource($serviceRequest->load(['farm', 'farmer', 'assignedPractitioner', 'fulfilledRecord'])),
+            'Service request created successfully on customer\'s behalf'
+        );
     }
 
     /**
@@ -252,11 +356,45 @@ class ServiceRequestController extends ApiController
             ? round(array_sum($validTurnaroundHours) / count($validTurnaroundHours), 1)
             : 0;
 
+        // Calculate Follow-up completion rate
+        $today = Carbon::today();
+        $dueVetFollowUps = \App\Models\VetRecord::whereNotNull('next_follow_up')
+            ->whereDate('next_follow_up', '<=', $today)
+            ->with(['followUpRecords', 'followUpServiceRequest'])
+            ->get();
+
+        $dueConsultantFollowUps = \App\Models\ConsultantRecord::whereNotNull('next_follow_up')
+            ->whereDate('next_follow_up', '<=', $today)
+            ->with(['followUpRecords', 'followUpServiceRequest'])
+            ->get();
+
+        $totalScheduled = $dueVetFollowUps->count() + $dueConsultantFollowUps->count();
+        $completedCount = 0;
+
+        foreach ($dueVetFollowUps as $rec) {
+            if ($rec->followUpRecords->isNotEmpty() || ($rec->followUpServiceRequest && $rec->followUpServiceRequest->status === 'completed')) {
+                $completedCount++;
+            }
+        }
+
+        foreach ($dueConsultantFollowUps as $rec) {
+            if ($rec->followUpRecords->isNotEmpty() || ($rec->followUpServiceRequest && $rec->followUpServiceRequest->status === 'completed')) {
+                $completedCount++;
+            }
+        }
+
+        $followUpCompletionRate = $totalScheduled > 0
+            ? round(($completedCount / $totalScheduled) * 100, 1)
+            : 100.0;
+
         return $this->successResponse([
             'open_requests' => $openCount,
             'urgent_requests' => $urgentCount,
             'completed_this_month' => $completedThisMonth,
             'avg_turnaround_hours' => $avgTurnaroundHours,
+            'follow_up_completion_rate' => $followUpCompletionRate,
+            'scheduled_follow_ups_count' => $totalScheduled,
+            'completed_follow_ups_count' => $completedCount,
         ], 'Service request metrics retrieved successfully');
     }
 }

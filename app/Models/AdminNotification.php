@@ -11,6 +11,7 @@ class AdminNotification extends Model
 
     protected $fillable = [
         'user_id',
+        'broadcast_id',
         'type',
         'title',
         'message',
@@ -31,6 +32,11 @@ class AdminNotification extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function broadcast(): BelongsTo
+    {
+        return $this->belongsTo(Broadcast::class);
     }
 
     /**

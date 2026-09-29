@@ -44,7 +44,7 @@ class PractitionerPortalController extends ApiController
         $avgRating = $totalRatings > 0 ? round((float) $ratedRequests->avg('rating'), 1) : 0.0;
 
         // Pending action requests (newly assigned, urgently sorted)
-        $pendingActionRequests = ServiceRequest::with(['farm', 'farmer'])
+        $pendingActionRequests = ServiceRequest::with(['farm', 'farmer', 'parentRecord'])
             ->where('assigned_to', $user->id)
             ->where('status', 'assigned')
             ->urgentFirst()
@@ -56,11 +56,24 @@ class PractitionerPortalController extends ApiController
                     ? $sr->assigned_at->copy()->addHours($slaThresholdHours)->isPast()
                     : ($sr->created_at ? $sr->created_at->copy()->addHours($slaThresholdHours)->isPast() : false);
 
+                $parentData = null;
+                if ($sr->parentRecord) {
+                    $parentData = [
+                        'id' => $sr->parentRecord->id,
+                        'visit_date' => $sr->parentRecord->visit_date?->toDateString(),
+                        'clinical_findings' => $sr->parentRecord->clinical_findings ?? $sr->parentRecord->findings ?? null,
+                    ];
+                }
+
                 return [
                     'id' => $sr->id,
                     'type' => $sr->type,
                     'urgency' => $sr->urgency,
                     'status' => $sr->status,
+                    'source_channel' => $sr->source_channel ?? 'self_service',
+                    'parent_record_id' => $sr->parent_record_id,
+                    'parent_record_type' => $sr->parent_record_type,
+                    'parent_record' => $parentData,
                     'description' => $sr->description,
                     'sla_threshold_hours' => $slaThresholdHours,
                     'is_overdue' => $isOverdue,
@@ -215,7 +228,7 @@ class PractitionerPortalController extends ApiController
         $records = collect();
 
         if ($isVet || $isAdmin) {
-            $vetRecords = VetRecord::with(['farm.user', 'farm'])
+            $vetRecords = VetRecord::with(['farm.user', 'farm', 'prescription.items.product', 'parentRecord'])
                 ->where('vet_id', $user->id)
                 ->latest('visit_date')
                 ->get()
@@ -229,6 +242,26 @@ class PractitionerPortalController extends ApiController
                         'medicine_given' => $rec->medicine_given,
                         'recommendation' => null,
                         'next_follow_up' => $rec->next_follow_up?->toDateString(),
+                        'parent_record_id' => $rec->parent_record_id,
+                        'prescription' => $rec->prescription ? [
+                            'id' => $rec->prescription->id,
+                            'pdf_url' => url("/api/v1/prescriptions/{$rec->prescription->id}/pdf"),
+                            'items' => $rec->prescription->items->map(fn($item) => [
+                                'id' => $item->id,
+                                'medicine_name' => $item->medicine_name,
+                                'dosage' => $item->dosage,
+                                'frequency' => $item->frequency,
+                                'duration' => $item->duration,
+                                'instructions' => $item->instructions,
+                                'product_id' => $item->product_id,
+                                'product' => $item->product ? [
+                                    'id' => $item->product->id,
+                                    'name' => $item->product->name,
+                                    'price' => $item->product->price,
+                                    'stock' => $item->product->stock,
+                                ] : null,
+                            ]),
+                        ] : null,
                         'farm' => $rec->farm ? [
                             'id' => $rec->farm->id,
                             'farm_name' => $rec->farm->farm_name,
@@ -246,7 +279,7 @@ class PractitionerPortalController extends ApiController
         }
 
         if ($isConsultant || $isAdmin) {
-            $consultantRecords = ConsultantRecord::with(['farm.user', 'farm'])
+            $consultantRecords = ConsultantRecord::with(['farm.user', 'farm', 'prescription.items.product', 'parentRecord'])
                 ->where('consultant_id', $user->id)
                 ->latest('visit_date')
                 ->get()
@@ -260,6 +293,26 @@ class PractitionerPortalController extends ApiController
                         'medicine_given' => null,
                         'recommendation' => $rec->recommendation,
                         'next_follow_up' => $rec->next_follow_up?->toDateString(),
+                        'parent_record_id' => $rec->parent_record_id,
+                        'prescription' => $rec->prescription ? [
+                            'id' => $rec->prescription->id,
+                            'pdf_url' => url("/api/v1/prescriptions/{$rec->prescription->id}/pdf"),
+                            'items' => $rec->prescription->items->map(fn($item) => [
+                                'id' => $item->id,
+                                'medicine_name' => $item->medicine_name,
+                                'dosage' => $item->dosage,
+                                'frequency' => $item->frequency,
+                                'duration' => $item->duration,
+                                'instructions' => $item->instructions,
+                                'product_id' => $item->product_id,
+                                'product' => $item->product ? [
+                                    'id' => $item->product->id,
+                                    'name' => $item->product->name,
+                                    'price' => $item->product->price,
+                                    'stock' => $item->product->stock,
+                                ] : null,
+                            ]),
+                        ] : null,
                         'farm' => $rec->farm ? [
                             'id' => $rec->farm->id,
                             'farm_name' => $rec->farm->farm_name,

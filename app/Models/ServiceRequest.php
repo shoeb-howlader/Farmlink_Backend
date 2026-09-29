@@ -23,6 +23,9 @@ class ServiceRequest extends Model
         'urgency',
         'photo_path',
         'status',
+        'source_channel',
+        'parent_record_type',
+        'parent_record_id',
         'assigned_to',
         'assigned_at',
         'completed_at',
@@ -60,6 +63,11 @@ class ServiceRequest extends Model
     public function fulfilledRecord(): MorphTo
     {
         return $this->morphTo(null, 'fulfilled_record_type', 'fulfilled_record_id');
+    }
+
+    public function parentRecord(): MorphTo
+    {
+        return $this->morphTo(null, 'parent_record_type', 'parent_record_id');
     }
 
     /**

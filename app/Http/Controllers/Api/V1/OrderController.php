@@ -22,7 +22,7 @@ class OrderController extends ApiController
         Gate::authorize('viewAny', Order::class);
 
         $user = $request->user();
-        $query = Order::with(['items.product', 'user', 'farm'])->latest();
+        $query = Order::with(['items.product', 'items.variant', 'user', 'farm'])->latest();
 
         if (! $user->hasRole('admin')) {
             $query->where('user_id', $user->id);
@@ -76,27 +76,62 @@ class OrderController extends ApiController
             $itemsData = [];
 
             foreach ($itemsPayload as $item) {
-                $updated = Product::where('id', $item['product_id'])
-                    ->where('stock', '>=', $item['quantity'])
-                    ->decrement('stock', $item['quantity']);
-
-                if (! $updated) {
-                    $product = Product::find($item['product_id']);
-                    $productName = $product ? $product->name : "ID #{$item['product_id']}";
-                    throw ValidationException::withMessages([
-                        'items' => ["Insufficient stock for product: {$productName}"],
-                    ]);
+                $product = Product::findOrFail($item['product_id']);
+                $variantId = $item['product_variant_id'] ?? null;
+                $variant = null;
+                if ($variantId) {
+                    $variant = \App\Models\ProductVariant::where('product_id', $product->id)->where('id', $variantId)->first();
+                }
+                if (! $variant) {
+                    $variant = $product->defaultVariant ?? $product->variants()->first();
                 }
 
-                $product = Product::find($item['product_id']);
-                $subtotal = $product->price * $item['quantity'];
-                $total += $subtotal;
+                if ($variant) {
+                    $updated = \App\Models\ProductVariant::where('id', $variant->id)
+                        ->where('stock', '>=', $item['quantity'])
+                        ->decrement('stock', $item['quantity']);
 
-                $itemsData[] = [
-                    'product_id' => $product->id,
-                    'quantity' => $item['quantity'],
-                    'price_at_purchase' => $product->price,
-                ];
+                    if (! $updated) {
+                        throw ValidationException::withMessages([
+                            'items' => ["Insufficient stock for {$product->name} ({$variant->variant_label})"],
+                        ]);
+                    }
+
+                    // Also keep parent product aggregate stock in sync
+                    Product::where('id', $product->id)->decrement('stock', $item['quantity']);
+
+                    $price = $variant->price;
+                    $subtotal = $price * $item['quantity'];
+                    $total += $subtotal;
+
+                    $itemsData[] = [
+                        'product_id' => $product->id,
+                        'product_variant_id' => $variant->id,
+                        'quantity' => $item['quantity'],
+                        'price_at_purchase' => $price,
+                    ];
+                } else {
+                    $updated = Product::where('id', $product->id)
+                        ->where('stock', '>=', $item['quantity'])
+                        ->decrement('stock', $item['quantity']);
+
+                    if (! $updated) {
+                        $productName = $product ? $product->name : "ID #{$item['product_id']}";
+                        throw ValidationException::withMessages([
+                            'items' => ["Insufficient stock for product: {$productName}"],
+                        ]);
+                    }
+
+                    $subtotal = $product->price * $item['quantity'];
+                    $total += $subtotal;
+
+                    $itemsData[] = [
+                        'product_id' => $product->id,
+                        'product_variant_id' => null,
+                        'quantity' => $item['quantity'],
+                        'price_at_purchase' => $product->price,
+                    ];
+                }
             }
 
             $order = Order::create([
@@ -138,7 +173,7 @@ class OrderController extends ApiController
         }
 
         return $this->createdResponse(
-            new OrderResource($order->load(['items.product', 'farm'])),
+            new OrderResource($order->load(['items.product', 'items.variant', 'farm'])),
             'Order placed successfully'
         );
     }
@@ -151,7 +186,7 @@ class OrderController extends ApiController
         Gate::authorize('view', $order);
 
         return $this->successResponse(
-            new OrderResource($order->load(['items.product', 'user', 'farm'])),
+            new OrderResource($order->load(['items.product', 'items.variant', 'user', 'farm'])),
             'Order retrieved successfully'
         );
     }

@@ -77,7 +77,11 @@ class DatabaseSeeder extends Seeder
         );
         $consultant->syncRoles(['consultant']);
 
-        // 6. Demo Farmer User
+        // 6. Products (25 distinct aquaculture products across 5 categories)
+        $this->call(ProductSeeder::class);
+        $products = Product::all();
+
+        // 7. Demo Farmer User
         $demoFarmer = User::firstOrCreate(
             ['email' => 'farmer@farmlink.com'],
             [
@@ -106,7 +110,7 @@ class DatabaseSeeder extends Seeder
             ]
         );
 
-        // 6b. Pending Approval Farmer User (Self-Registered, Verified Phone, Awaiting Admin Approval)
+        // 7b. Pending Approval Farmer User (Self-Registered, Verified Phone, Awaiting Admin Approval)
         $pendingFarmer = User::firstOrCreate(
             ['email' => 'hasanuzzaman@farmlink.com'],
             [
@@ -174,6 +178,35 @@ class DatabaseSeeder extends Seeder
             ]
         );
 
+        $demoPrescription = \App\Models\Prescription::firstOrCreate(
+            ['vet_record_id' => $completedVetRec->id],
+            ['notes' => 'Complete antibacterial protocol for nursery pond gill necrosis.']
+        );
+        if ($demoPrescription->items()->count() === 0) {
+            $oxyProduct = Product::where('name', 'like', '%Oxy%')->first();
+            $aquaCleanProduct = Product::where('name', 'like', '%AquaClean%')->first();
+
+            \App\Models\PrescriptionItem::create([
+                'prescription_id' => $demoPrescription->id,
+                'medicine_name' => 'Oxytetracycline 20% Solution',
+                'dosage' => '50mg / kg biomass',
+                'frequency' => 'Once daily',
+                'duration' => '5 days',
+                'instructions' => 'Mix thoroughly with morning feed pellets. Maintain strong aeration.',
+                'product_id' => $oxyProduct?->id,
+            ]);
+
+            \App\Models\PrescriptionItem::create([
+                'prescription_id' => $demoPrescription->id,
+                'medicine_name' => 'AquaClean Water Conditioner 1L',
+                'dosage' => '100ml / decimal',
+                'frequency' => 'Single application',
+                'duration' => '1 day',
+                'instructions' => 'Dilute in bucket of pond water and distribute evenly across nursery pond.',
+                'product_id' => $aquaCleanProduct?->id,
+            ]);
+        }
+
         \App\Models\ServiceRequest::firstOrCreate(
             ['farm_id' => $demoFarm->id, 'description' => 'Discolored gills and slow feeding behavior in nursery pond.'],
             [
@@ -192,46 +225,7 @@ class DatabaseSeeder extends Seeder
             ]
         );
 
-        // 7. Products
-        $products = collect([
-            Product::factory()->create([
-                'name' => 'Mega Aqua Feed Grower 25kg',
-                'category' => 'Feed',
-                'price' => 2450.00,
-                'stock' => 120,
-                'description' => 'High-protein 32% sinking pellet feed formulated for commercial shrimp and finfish growth stages. Feed 2-3 times daily based on body weight.',
-            ]),
-            Product::factory()->create([
-                'name' => 'Bio-Aqua Probiotic 500g',
-                'category' => 'Probiotics',
-                'price' => 850.00,
-                'stock' => 80,
-                'description' => 'Multi-strain beneficial bacteria blend for pond bottom bioremediation, organic sludge digestion, and maintaining healthy water microbiome.',
-            ]),
-            Product::factory()->create([
-                'name' => 'OxyFlow Pond Aerator 2HP',
-                'category' => 'Equipment',
-                'price' => 18500.00,
-                'stock' => 25,
-                'description' => 'Energy-efficient 4-paddle wheel aerator designed for high oxygen transfer rate in semi-intensive and intensive fish and shrimp culture ponds.',
-            ]),
-            Product::factory()->create([
-                'name' => 'AquaClean Water Conditioner 1L',
-                'category' => 'Chemicals',
-                'price' => 1200.00,
-                'stock' => 60,
-                'description' => 'Rapid-action water clarifier and heavy metal neutralizer. Restores optimal pH balance and alkalinity in pond water before stocking.',
-            ]),
-            Product::factory()->create([
-                'name' => 'VitaBoost Growth Promoter 1kg',
-                'category' => 'Medicine',
-                'price' => 950.00,
-                'stock' => 100,
-                'description' => 'Fortified essential vitamin and amino acid supplement. Enhances feed conversion ratio (FCR) and disease resistance in aquatic species.',
-            ]),
-        ]);
-
-        // 7. Farmers with Farms, Orders, and Records
+        // 8. Additional Farmers with Farms, Orders, and Records
         $farmers = User::factory(5)->create()->each(function (User $farmer) use ($vet, $consultant, $products) {
             $farmer->syncRoles(['farmer']);
 
@@ -281,5 +275,8 @@ class DatabaseSeeder extends Seeder
 
         // 8. Seed Realistic Notifications
         $this->call(NotificationSeeder::class);
+
+        // 9. Seed Product Reviews & Delivered Orders
+        $this->call(ProductReviewSeeder::class);
     }
 }

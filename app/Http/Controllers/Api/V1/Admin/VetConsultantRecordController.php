@@ -31,7 +31,7 @@ class VetConsultantRecordController extends ApiController
         $practitionerId = $request->query('practitioner_id');
 
         if ($type === 'all' || $type === 'vet') {
-            $vetQuery = VetRecord::with(['farm.farmer', 'vet']);
+            $vetQuery = VetRecord::with(['farm.farmer', 'vet', 'prescription.items.product', 'parentRecord', 'followUpRecords', 'testResults', 'photos']);
 
             if ($practitionerId) {
                 $vetQuery->where('vet_id', $practitionerId);
@@ -78,6 +78,26 @@ class VetConsultantRecordController extends ApiController
                     'treatment' => $vr->treatment,
                     'medicine_given' => $vr->medicine_given,
                     'recommendation' => null,
+                    'parent_record_id' => $vr->parent_record_id,
+                    'prescription' => $vr->prescription ? [
+                        'id' => $vr->prescription->id,
+                        'pdf_url' => url("/api/v1/prescriptions/{$vr->prescription->id}/pdf"),
+                        'items' => $vr->prescription->items->map(fn($item) => [
+                            'id' => $item->id,
+                            'medicine_name' => $item->medicine_name,
+                            'dosage' => $item->dosage,
+                            'frequency' => $item->frequency,
+                            'duration' => $item->duration,
+                            'instructions' => $item->instructions,
+                            'product_id' => $item->product_id,
+                            'product' => $item->product ? [
+                                'id' => $item->product->id,
+                                'name' => $item->product->name,
+                                'price' => $item->product->price,
+                                'stock' => $item->product->stock,
+                            ] : null,
+                        ]),
+                    ] : null,
                     'farm' => $vr->farm ? [
                         'id' => $vr->farm->id,
                         'name' => $vr->farm->farm_name,
@@ -94,6 +114,22 @@ class VetConsultantRecordController extends ApiController
                         'name' => $vr->vet->name,
                         'role' => 'veterinary_doctor',
                     ] : null,
+                    'test_results' => $vr->testResults->map(fn($t) => [
+                        'id' => $t->id,
+                        'parameter' => $t->parameter,
+                        'value' => $t->value,
+                        'unit' => $t->unit,
+                        'reference_range' => $t->reference_range,
+                        'flag' => $t->flag,
+                    ]),
+                    'photos' => $vr->photos->map(fn($p) => [
+                        'id' => $p->id,
+                        'photo_path' => $p->photo_path,
+                        'url' => $p->url,
+                        'thumbnail_url' => $p->thumbnail_url,
+                        'caption' => $p->caption,
+                        'sort_order' => $p->sort_order,
+                    ]),
                     'created_at' => $vr->created_at?->toISOString(),
                 ];
             });
@@ -102,7 +138,7 @@ class VetConsultantRecordController extends ApiController
         }
 
         if ($type === 'all' || $type === 'consultant') {
-            $consultantQuery = ConsultantRecord::with(['farm.farmer', 'consultant']);
+            $consultantQuery = ConsultantRecord::with(['farm.farmer', 'consultant', 'prescription.items.product', 'parentRecord', 'followUpRecords', 'testResults', 'photos']);
 
             if ($practitionerId) {
                 $consultantQuery->where('consultant_id', $practitionerId);
@@ -147,6 +183,26 @@ class VetConsultantRecordController extends ApiController
                     'treatment' => null,
                     'medicine_given' => null,
                     'recommendation' => $cr->recommendation,
+                    'parent_record_id' => $cr->parent_record_id,
+                    'prescription' => $cr->prescription ? [
+                        'id' => $cr->prescription->id,
+                        'pdf_url' => url("/api/v1/prescriptions/{$cr->prescription->id}/pdf"),
+                        'items' => $cr->prescription->items->map(fn($item) => [
+                            'id' => $item->id,
+                            'medicine_name' => $item->medicine_name,
+                            'dosage' => $item->dosage,
+                            'frequency' => $item->frequency,
+                            'duration' => $item->duration,
+                            'instructions' => $item->instructions,
+                            'product_id' => $item->product_id,
+                            'product' => $item->product ? [
+                                'id' => $item->product->id,
+                                'name' => $item->product->name,
+                                'price' => $item->product->price,
+                                'stock' => $item->product->stock,
+                            ] : null,
+                        ]),
+                    ] : null,
                     'farm' => $cr->farm ? [
                         'id' => $cr->farm->id,
                         'name' => $cr->farm->farm_name,
@@ -163,6 +219,22 @@ class VetConsultantRecordController extends ApiController
                         'name' => $cr->consultant->name,
                         'role' => 'consultant',
                     ] : null,
+                    'test_results' => $cr->testResults->map(fn($t) => [
+                        'id' => $t->id,
+                        'parameter' => $t->parameter,
+                        'value' => $t->value,
+                        'unit' => $t->unit,
+                        'reference_range' => $t->reference_range,
+                        'flag' => $t->flag,
+                    ]),
+                    'photos' => $cr->photos->map(fn($p) => [
+                        'id' => $p->id,
+                        'photo_path' => $p->photo_path,
+                        'url' => $p->url,
+                        'thumbnail_url' => $p->thumbnail_url,
+                        'caption' => $p->caption,
+                        'sort_order' => $p->sort_order,
+                    ]),
                     'created_at' => $cr->created_at?->toISOString(),
                 ];
             });

@@ -9,10 +9,10 @@ use Illuminate\Support\Str;
 class ImageUploadService
 {
     /**
-     * Store an uploaded image and generate a 150x150 thumbnail.
+     * Store an uploaded image, auto-compress to WebP (using GD), and generate a square thumbnail.
      *
      * @param UploadedFile $file
-     * @param string $folder Relative directory under storage/app/public (e.g. 'avatars', 'products', 'farms')
+     * @param string $folder Relative directory under storage/app/public (e.g. 'avatars', 'products', 'products/editor')
      * @param int $thumbnailSize
      * @return array{path: string, thumbnail_path: string, url: string, thumbnail_url: string}
      */
@@ -23,17 +23,33 @@ class ImageUploadService
             $extension = 'jpg';
         }
 
-        $filename = Str::uuid()->toString() . '.' . $extension;
+        $uuid = Str::uuid()->toString();
+        $webpSaved = false;
+        $originalFilename = "{$uuid}.{$extension}";
+        $originalPath = "{$folder}/{$originalFilename}";
 
-        // Store original
-        $originalPath = "{$folder}/{$filename}";
-        Storage::disk('public')->putFileAs($folder, $file, $filename);
+        // Attempt WebP auto-compression
+        if (function_exists('imagewebp')) {
+            $webpData = $this->compressToWebP($file->getRealPath());
+            if ($webpData !== null) {
+                $originalFilename = "{$uuid}.webp";
+                $originalPath = "{$folder}/{$originalFilename}";
+                Storage::disk('public')->put($originalPath, $webpData);
+                $webpSaved = true;
+            }
+        }
+
+        // Fallback: store original file
+        if (! $webpSaved) {
+            Storage::disk('public')->putFileAs($folder, $file, $originalFilename);
+        }
 
         // Generate thumbnail
-        $thumbnailFilename = $filename;
+        $thumbExt = (function_exists('imagewebp') || $webpSaved) ? 'webp' : $extension;
+        $thumbnailFilename = "{$uuid}.{$thumbExt}";
         $thumbnailPath = "{$folder}/thumbnails/{$thumbnailFilename}";
 
-        $this->generateThumbnail($file->getRealPath(), $thumbnailPath, $thumbnailSize, $extension);
+        $this->generateThumbnail($file->getRealPath(), $thumbnailPath, $thumbnailSize, $thumbExt);
 
         return [
             'path' => $originalPath,
@@ -41,6 +57,43 @@ class ImageUploadService
             'url' => Storage::disk('public')->url($originalPath),
             'thumbnail_url' => Storage::disk('public')->url($thumbnailPath),
         ];
+    }
+
+    /**
+     * Convert and compress an image file to WebP binary data using GD.
+     */
+    protected function compressToWebP(string $sourcePath, int $quality = 85): ?string
+    {
+        $imageInfo = @getimagesize($sourcePath);
+        if (! $imageInfo) {
+            return null;
+        }
+
+        [$width, $height, $imageType] = $imageInfo;
+
+        $sourceImage = match ($imageType) {
+            IMAGETYPE_JPEG => @imagecreatefromjpeg($sourcePath),
+            IMAGETYPE_PNG => @imagecreatefrompng($sourcePath),
+            IMAGETYPE_WEBP => @imagecreatefromwebp($sourcePath),
+            default => null,
+        };
+
+        if (! $sourceImage) {
+            return null;
+        }
+
+        if ($imageType === IMAGETYPE_PNG || $imageType === IMAGETYPE_WEBP) {
+            imagealphablending($sourceImage, true);
+            imagesavealpha($sourceImage, true);
+        }
+
+        ob_start();
+        $success = imagewebp($sourceImage, null, $quality);
+        $data = ob_get_clean();
+
+        imagedestroy($sourceImage);
+
+        return $success ? $data : null;
     }
 
     /**
@@ -76,7 +129,7 @@ class ImageUploadService
 
         $thumbImage = imagecreatetruecolor($size, $size);
 
-        if ($imageType === IMAGETYPE_PNG || $imageType === IMAGETYPE_WEBP) {
+        if ($imageType === IMAGETYPE_PNG || $imageType === IMAGETYPE_WEBP || $extension === 'webp') {
             imagealphablending($thumbImage, false);
             imagesavealpha($thumbImage, true);
             $transparent = imagecolorallocatealpha($thumbImage, 255, 255, 255, 127);
@@ -96,13 +149,16 @@ class ImageUploadService
             $minDim
         );
 
-        // Save thumbnail to a temporary stream or directly to public storage
+        // Save thumbnail to public storage
         ob_start();
-        match ($imageType) {
-            IMAGETYPE_PNG => imagepng($thumbImage, null, 8),
-            IMAGETYPE_WEBP => imagewebp($thumbImage, null, 85),
-            default => imagejpeg($thumbImage, null, 85),
-        };
+        if (function_exists('imagewebp')) {
+            imagewebp($thumbImage, null, 85);
+        } else {
+            match ($imageType) {
+                IMAGETYPE_PNG => imagepng($thumbImage, null, 8),
+                default => imagejpeg($thumbImage, null, 85),
+            };
+        }
         $thumbData = ob_get_clean();
 
         Storage::disk('public')->put($targetRelativePath, $thumbData);

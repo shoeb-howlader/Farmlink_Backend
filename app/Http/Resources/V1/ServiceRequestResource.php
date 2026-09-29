@@ -35,6 +35,32 @@ class ServiceRequestResource extends JsonResource
             }
         }
 
+        $fulfilledRecordData = null;
+        if ($this->relationLoaded('fulfilledRecord') && $this->fulfilledRecord) {
+            if ($this->fulfilledRecord instanceof \App\Models\VetRecord) {
+                $this->fulfilledRecord->loadMissing(['prescription.items.product', 'vet', 'farm', 'testResults', 'photos']);
+                $fulfilledRecordData = new VetRecordResource($this->fulfilledRecord);
+            } elseif ($this->fulfilledRecord instanceof \App\Models\ConsultantRecord) {
+                $this->fulfilledRecord->loadMissing(['prescription.items.product', 'consultant', 'farm', 'testResults', 'photos']);
+                $fulfilledRecordData = new ConsultantRecordResource($this->fulfilledRecord);
+            } else {
+                $fulfilledRecordData = $this->fulfilledRecord;
+            }
+        }
+
+        $parentRecordData = null;
+        if ($this->relationLoaded('parentRecord') && $this->parentRecord) {
+            if ($this->parentRecord instanceof \App\Models\VetRecord) {
+                $this->parentRecord->loadMissing(['prescription.items.product', 'vet', 'farm', 'testResults', 'photos']);
+                $parentRecordData = new VetRecordResource($this->parentRecord);
+            } elseif ($this->parentRecord instanceof \App\Models\ConsultantRecord) {
+                $this->parentRecord->loadMissing(['prescription.items.product', 'consultant', 'farm', 'testResults', 'photos']);
+                $parentRecordData = new ConsultantRecordResource($this->parentRecord);
+            } else {
+                $parentRecordData = $this->parentRecord;
+            }
+        }
+
         return [
             'id' => $this->id,
             'farm_id' => $this->farm_id,
@@ -44,6 +70,10 @@ class ServiceRequestResource extends JsonResource
             'type' => $this->type,
             'description' => $this->description,
             'urgency' => $this->urgency,
+            'source_channel' => $this->source_channel ?? 'self_service',
+            'parent_record_type' => $this->parent_record_type,
+            'parent_record_id' => $this->parent_record_id,
+            'parent_record' => $parentRecordData ?? $this->whenLoaded('parentRecord'),
             'photo_url' => $photoUrl,
             'photo_path' => $this->photo_path,
             'status' => $this->status,
@@ -56,7 +86,7 @@ class ServiceRequestResource extends JsonResource
             'turnaround_hours' => $turnaroundHours,
             'fulfilled_record_type' => $this->fulfilled_record_type,
             'fulfilled_record_id' => $this->fulfilled_record_id,
-            'fulfilled_record' => $this->whenLoaded('fulfilledRecord'),
+            'fulfilled_record' => $fulfilledRecordData ?? $this->whenLoaded('fulfilledRecord'),
             'rating' => $this->rating,
             'feedback_note' => $this->feedback_note,
             'created_at' => $this->created_at?->toISOString(),

@@ -34,6 +34,7 @@ class PosController extends ApiController
             'farm_id' => ['nullable', 'integer', 'exists:farms,id'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.product_id' => ['required', 'integer', 'exists:products,id'],
+            'items.*.product_variant_id' => ['nullable', 'integer', 'exists:product_variants,id'],
             'items.*.quantity' => ['required', 'integer', 'min:1'],
             'items.*.price_at_purchase' => ['nullable', 'numeric', 'min:0'],
             'payment_mode' => ['nullable', 'string', 'in:cash,cod,farmer_credit'],
@@ -77,31 +78,46 @@ class PosController extends ApiController
 
             foreach ($validated['items'] as $item) {
                 $qty = (int) $item['quantity'];
+                $product = Product::with('variants')->findOrFail($item['product_id']);
+                $variantId = $item['product_variant_id'] ?? null;
+                $variant = $variantId
+                    ? $product->variants->firstWhere('id', $variantId)
+                    : ($product->defaultVariant ?? $product->variants->first());
 
-                // Atomic stock decrement with concurrency protection
-                $updated = Product::where('id', $item['product_id'])
-                    ->where('stock', '>=', $qty)
-                    ->decrement('stock', $qty);
+                if ($variant) {
+                    $updated = \App\Models\ProductVariant::where('id', $variant->id)
+                        ->where('stock', '>=', $qty)
+                        ->decrement('stock', $qty);
 
-                if (! $updated) {
-                    $prod = Product::find($item['product_id']);
-                    $prodName = $prod ? $prod->name : "Product #{$item['product_id']}";
-                    throw ValidationException::withMessages([
-                        'items' => ["Insufficient stock for {$prodName}. Available stock: " . ($prod ? $prod->stock : 0)],
-                    ]);
+                    if (! $updated) {
+                        throw ValidationException::withMessages([
+                            'items' => ["Insufficient stock for {$product->name} ({$variant->variant_label}). Available stock: {$variant->stock}"],
+                        ]);
+                    }
+
+                    $product->syncAggregateStockAndPrice();
+                } else {
+                    $updated = Product::where('id', $product->id)
+                        ->where('stock', '>=', $qty)
+                        ->decrement('stock', $qty);
+
+                    if (! $updated) {
+                        throw ValidationException::withMessages([
+                            'items' => ["Insufficient stock for {$product->name}. Available stock: {$product->stock}"],
+                        ]);
+                    }
                 }
 
-                $product = Product::find($item['product_id']);
-                // Use override price if provided, otherwise regular product price
                 $unitPrice = isset($item['price_at_purchase']) && $item['price_at_purchase'] !== null && $item['price_at_purchase'] !== ''
                     ? (float) $item['price_at_purchase']
-                    : (float) $product->price;
+                    : (float) ($variant ? $variant->price : $product->price);
 
                 $lineTotal = $unitPrice * $qty;
                 $total += $lineTotal;
 
                 $itemsData[] = [
                     'product_id' => $product->id,
+                    'product_variant_id' => $variant?->id,
                     'quantity' => $qty,
                     'price_at_purchase' => $unitPrice,
                 ];

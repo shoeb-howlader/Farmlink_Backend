@@ -78,4 +78,22 @@ class ProductFactory extends Factory
             'description' => $selected['description'],
         ];
     }
+
+    /**
+     * Configure the model factory.
+     */
+    public function configure(): static
+    {
+        return $this->afterCreating(function (Product $product) {
+            if ($product->variants()->count() === 0) {
+                $product->variants()->create([
+                    'variant_label' => 'Standard',
+                    'sku' => 'SKU-' . str_pad($product->id, 4, '0', STR_PAD_LEFT) . '-STD',
+                    'price' => $product->price,
+                    'stock' => (int) ($product->getRawOriginal('stock') ?? 0),
+                    'is_default' => true,
+                ]);
+            }
+        });
+    }
 }

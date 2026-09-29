@@ -60,26 +60,34 @@ class FarmController extends ApiController
         }
 
         $sortBy = $request->query('sort_by', 'created_at');
-        $sortDir = strtolower($request->query('sort_direction', 'desc')) === 'asc' ? 'asc' : 'desc';
+        $rawDir = $request->query('sort_direction') ?? $request->query('sort_dir') ?? 'desc';
+        $sortDir = strtolower($rawDir) === 'asc' ? 'asc' : 'desc';
 
         switch ($sortBy) {
             case 'orders_count':
-                $query->orderBy('orders_count', $sortDir);
+                $query->orderBy('orders_count', $sortDir)->orderBy('id', 'desc');
                 break;
             case 'visits_count':
-                $query->orderByRaw('(coalesce(vet_records_count, 0) + coalesce(consultant_records_count, 0)) ' . $sortDir);
+                $query->orderByRaw('(coalesce(vet_records_count, 0) + coalesce(consultant_records_count, 0)) ' . $sortDir)->orderBy('id', 'desc');
                 break;
             case 'total_area':
-                $query->orderBy('total_area', $sortDir);
+                $query->orderBy('total_area', $sortDir)->orderBy('id', 'desc');
                 break;
             case 'pond_count':
-                $query->orderBy('pond_count', $sortDir);
+                $query->orderBy('pond_count', $sortDir)->orderBy('id', 'desc');
                 break;
             case 'farm_name':
-                $query->orderBy('farm_name', $sortDir);
+                $query->orderBy('farm_name', $sortDir)->orderBy('id', 'desc');
                 break;
+            case 'district':
+                $query->orderBy('district', $sortDir)->orderBy('id', 'desc');
+                break;
+            case 'id':
+                $query->orderBy('id', $sortDir);
+                break;
+            case 'created_at':
             default:
-                $query->latest();
+                $query->orderBy('created_at', $sortDir)->orderBy('id', $sortDir);
                 break;
         }
 

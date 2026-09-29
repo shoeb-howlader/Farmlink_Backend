@@ -20,7 +20,7 @@ class ServiceRequestController extends ApiController
     {
         $user = $request->user();
 
-        $query = ServiceRequest::with(['farm', 'farmer', 'assignedPractitioner', 'fulfilledRecord'])
+        $query = ServiceRequest::with(['farm', 'farmer', 'assignedPractitioner', 'fulfilledRecord', 'parentRecord'])
             ->urgentFirst();
 
         if (! $user->hasRole('admin')) {
@@ -44,6 +44,30 @@ class ServiceRequestController extends ApiController
         return $this->successResponse(
             ServiceRequestResource::collection($serviceRequests)->response()->getData(true),
             'Service requests retrieved successfully'
+        );
+    }
+
+    /**
+     * Display service request details for farmer or practitioner.
+     */
+    public function show(Request $request, ServiceRequest $serviceRequest): JsonResponse
+    {
+        $user = $request->user();
+        if ($serviceRequest->farmer_id !== $user->id && ! $user->hasRole('admin') && ! $user->hasRole('data_entry_operator') && $serviceRequest->assigned_to !== $user->id) {
+            return $this->errorResponse('Unauthorized to view this service request', 403);
+        }
+
+        $serviceRequest->loadMissing([
+            'farm',
+            'farmer',
+            'assignedPractitioner',
+            'fulfilledRecord',
+            'parentRecord',
+        ]);
+
+        return $this->successResponse(
+            new ServiceRequestResource($serviceRequest),
+            'Service request details retrieved successfully'
         );
     }
 
@@ -128,5 +152,78 @@ class ServiceRequestController extends ApiController
             new ServiceRequestResource($serviceRequest->load(['farm', 'farmer', 'assignedPractitioner', 'fulfilledRecord'])),
             'Feedback submitted successfully'
         );
+    }
+
+    /**
+     * Retrieve previous visits for the farm associated with this service request.
+     */
+    public function previousVisits(Request $request, ServiceRequest $serviceRequest): JsonResponse
+    {
+        $user = $request->user();
+        if ($serviceRequest->farmer_id !== $user->id && ! $user->hasRole('admin') && ! $user->hasRole('data_entry_operator') && $serviceRequest->assigned_to !== $user->id) {
+            return $this->errorResponse('Unauthorized to view previous visits for this request', 403);
+        }
+
+        $farm = $serviceRequest->farm;
+        if (! $farm) {
+            return $this->successResponse([], 'No farm associated with this service request');
+        }
+
+        $vetRecords = $farm->vetRecords()
+            ->with(['vet', 'photos'])
+            ->latest('visit_date')
+            ->limit(5)
+            ->get()
+            ->map(function ($record) use ($serviceRequest) {
+                $isOriginating = ($serviceRequest->parent_record_id == $record->id && $serviceRequest->type === 'vet');
+                return [
+                    'id' => $record->id,
+                    'type' => 'vet',
+                    'type_label' => 'Veterinary Visit',
+                    'visit_date' => $record->visit_date ? $record->visit_date->toDateString() : null,
+                    'practitioner_name' => $record->vet?->name ?? 'Attending Vet',
+                    'practitioner_role' => 'Veterinary Doctor',
+                    'findings_summary' => \Illuminate\Support\Str::limit($record->findings, 140),
+                    'full_findings' => $record->findings,
+                    'treatment' => $record->treatment,
+                    'next_follow_up' => $record->next_follow_up ? $record->next_follow_up->toDateString() : null,
+                    'has_follow_up' => !empty($record->next_follow_up),
+                    'report_url' => "/vet-records/{$record->id}/visit-report",
+                    'photos_count' => $record->photos->count(),
+                    'is_originating' => $isOriginating,
+                ];
+            });
+
+        $consultantRecords = $farm->consultantRecords()
+            ->with(['consultant', 'photos'])
+            ->latest('visit_date')
+            ->limit(5)
+            ->get()
+            ->map(function ($record) use ($serviceRequest) {
+                $isOriginating = ($serviceRequest->parent_record_id == $record->id && $serviceRequest->type === 'consultant');
+                return [
+                    'id' => $record->id,
+                    'type' => 'consultant',
+                    'type_label' => 'Consultant Advisory',
+                    'visit_date' => $record->visit_date ? $record->visit_date->toDateString() : null,
+                    'practitioner_name' => $record->consultant?->name ?? 'Attending Consultant',
+                    'practitioner_role' => 'Aquaculture Consultant',
+                    'findings_summary' => \Illuminate\Support\Str::limit($record->recommendation, 140),
+                    'full_findings' => $record->recommendation,
+                    'treatment' => null,
+                    'next_follow_up' => $record->next_follow_up ? $record->next_follow_up->toDateString() : null,
+                    'has_follow_up' => !empty($record->next_follow_up),
+                    'report_url' => "/consultant-records/{$record->id}/visit-report",
+                    'photos_count' => $record->photos->count(),
+                    'is_originating' => $isOriginating,
+                ];
+            });
+
+        $combined = $vetRecords->concat($consultantRecords)
+            ->sortByDesc('visit_date')
+            ->values()
+            ->take(5);
+
+        return $this->successResponse($combined, 'Previous visits retrieved successfully');
     }
 }

@@ -29,6 +29,13 @@ class VetRecordResource extends JsonResource
             'treatment' => $this->treatment,
             'medicine_given' => $this->medicine_given,
             'next_follow_up' => $this->next_follow_up?->format('Y-m-d'),
+            'parent_record_id' => $this->parent_record_id,
+            'parent_record' => new VetRecordResource($this->whenLoaded('parentRecord')),
+            'follow_up_records' => VetRecordResource::collection($this->whenLoaded('followUpRecords')),
+            'follow_up_service_request_id' => $this->follow_up_service_request_id,
+            'prescription' => new PrescriptionResource($this->whenLoaded('prescription')),
+            'test_results' => VisitTestResultResource::collection($this->whenLoaded('testResults')),
+            'photos' => VisitPhotoResource::collection($this->whenLoaded('photos')),
             'created_at' => $this->created_at?->toISOString(),
             'updated_at' => $this->updated_at?->toISOString(),
         ];

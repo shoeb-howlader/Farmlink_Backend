@@ -17,9 +17,19 @@ class ProductController extends ApiController
         // Featured products mode: return up to 4 editorially-chosen products,
         // falling back to any in-stock products if none are flagged.
         if ($request->boolean('featured')) {
+            $stockScope = function ($q) {
+                $q->where(function ($subQ) {
+                    $subQ->whereHas('variants', function ($vq) {
+                        $vq->where('stock', '>', 0);
+                    })->orWhere(function ($fallbackQ) {
+                        $fallbackQ->whereDoesntHave('variants')->where('stock', '>', 0);
+                    });
+                });
+            };
+
             $featured = Product::where('is_active', true)
                 ->where('is_featured', true)
-                ->where('stock', '>', 0)
+                ->where($stockScope)
                 ->latest()
                 ->take(4)
                 ->get();
@@ -28,7 +38,7 @@ class ProductController extends ApiController
             if ($featured->count() < 4) {
                 $excludeIds = $featured->pluck('id');
                 $fillers = Product::where('is_active', true)
-                    ->where('stock', '>', 0)
+                    ->where($stockScope)
                     ->whereNotIn('id', $excludeIds)
                     ->latest()
                     ->take(4 - $featured->count())
@@ -43,29 +53,103 @@ class ProductController extends ApiController
             );
         }
 
-        $query = Product::where('is_active', true);
+        $query = Product::where('is_active', true)->with(['variants', 'images', 'specs', 'documents']);
 
         if ($request->filled('category')) {
-            $query->where('category', $request->query('category'));
+            $catInput = strtolower(trim((string) $request->query('category')));
+            $categoryMap = [
+                'feed' => 'Feed',
+                'medicine' => 'Medicine',
+                'equipment' => 'Equipment',
+                'chemicals' => 'Chemicals',
+                'probiotics' => 'Probiotics',
+            ];
+
+            if (isset($categoryMap[$catInput])) {
+                $query->where('category', $categoryMap[$catInput]);
+            } else {
+                $query->whereRaw('LOWER(category) = ?', [$catInput]);
+            }
         }
 
         if ($request->filled('search')) {
             $search = $request->query('search');
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'like', "%{$search}%")
-                    ->orWhere('description', 'like', "%{$search}%");
+                    ->orWhere('description', 'like', "%{$search}%")
+                    ->orWhere('short_description', 'like', "%{$search}%");
             });
         }
 
         if ($request->boolean('in_stock')) {
-            $query->where('stock', '>', 0);
+            $query->where(function ($subQ) {
+                $subQ->whereHas('variants', function ($vq) {
+                    $vq->where('stock', '>', 0);
+                })->orWhere(function ($fallbackQ) {
+                    $fallbackQ->whereDoesntHave('variants')->where('stock', '>', 0);
+                });
+            });
         }
 
-        $products = $query->latest()->get();
+        $sort = $request->query('sort');
+        if ($sort === 'price_asc') {
+            $query->orderBy('price', 'asc');
+        } elseif ($sort === 'price_desc') {
+            $query->orderBy('price', 'desc');
+        } elseif ($sort === 'name_asc') {
+            $query->orderBy('name', 'asc');
+        } else {
+            $query->latest();
+        }
+
+        $perPage = $request->query('per_page');
+        $page = $request->query('page');
+        $paginate = $request->boolean('paginate') || $perPage !== null || $page !== null;
+
+        if ($paginate) {
+            $limit = max(1, min((int) ($perPage ?? 12), 24));
+            $paginated = $query->paginate($limit);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Products retrieved successfully',
+                'data' => ProductResource::collection($paginated->items()),
+                'meta' => [
+                    'current_page' => $paginated->currentPage(),
+                    'last_page' => $paginated->lastPage(),
+                    'per_page' => $paginated->perPage(),
+                    'total' => $paginated->total(),
+                ],
+            ]);
+        }
+
+        $products = $query->get();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Products retrieved successfully',
+            'data' => ProductResource::collection($products),
+            'meta' => [
+                'current_page' => 1,
+                'last_page' => 1,
+                'per_page' => $products->count(),
+                'total' => $products->count(),
+            ],
+        ]);
+    }
+
+    /**
+     * Display the specified product.
+     */
+    public function show(Product $product): JsonResponse
+    {
+        abort_if(! $product->is_active, 404, 'Product not found or inactive.');
+
+        $product->load(['variants', 'images', 'specs', 'documents', 'reviews.user']);
 
         return $this->successResponse(
-            ProductResource::collection($products),
-            'Products retrieved successfully'
+            new ProductResource($product),
+            'Product retrieved successfully'
         );
     }
 }

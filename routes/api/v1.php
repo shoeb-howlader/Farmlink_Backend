@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\V1\Admin\AuditLogController as AdminAuditLogController;
+use App\Http\Controllers\Api\V1\Admin\BroadcastController as AdminBroadcastController;
 use App\Http\Controllers\Api\V1\Admin\FarmController as AdminFarmController;
 use App\Http\Controllers\Api\V1\Admin\FarmerApprovalController;
 use App\Http\Controllers\Api\V1\Admin\FarmerController as AdminFarmerController;
@@ -23,6 +24,7 @@ use App\Http\Controllers\Api\V1\Admin\PosController as AdminPosController;
 use App\Http\Controllers\Api\V1\OtpController;
 use App\Http\Controllers\Api\V1\OrderController;
 use App\Http\Controllers\Api\V1\Practitioner\ServiceRequestController as PractitionerServiceRequestController;
+use App\Http\Controllers\Api\V1\PrescriptionController;
 use App\Http\Controllers\Api\V1\ProductController;
 use App\Http\Controllers\Api\V1\ServiceRequestController;
 use App\Http\Controllers\Api\V1\StatusController;
@@ -45,6 +47,8 @@ Route::get('/status', StatusController::class)->name('status');
 Route::post('/register', [AuthController::class, 'register'])->middleware('throttle:10,1')->name('register');
 Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:10,1')->name('login');
 Route::get('/products', [ProductController::class, 'index'])->name('products.index');
+Route::get('/products/{product}', [ProductController::class, 'show'])->name('products.show');
+Route::get('/products/{product}/reviews', [\App\Http\Controllers\Api\V1\ProductReviewController::class, 'index'])->name('products.reviews.index');
 
 // Phone OTP verification (public or authenticated)
 Route::post('/auth/otp/verify', [OtpController::class, 'verify'])->name('auth.otp.verify');
@@ -68,6 +72,18 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/orders/{order}', [OrderController::class, 'show'])->name('orders.show');
     Route::get('/orders/{order}/invoice', [InvoiceController::class, 'farmerInvoice'])->name('orders.invoice');
 
+    // Product Reviews (Farmers after delivery)
+    Route::post('/products/{product}/reviews', [\App\Http\Controllers\Api\V1\ProductReviewController::class, 'store'])->name('products.reviews.store');
+
+    // Prescriptions (PDF generation)
+    Route::get('/prescriptions/{prescription}/pdf', [PrescriptionController::class, 'downloadPdf'])->name('prescriptions.pdf');
+
+    // Visit Reports (Unified PDF generation)
+    Route::get('/service-requests/{serviceRequest}/visit-report', [\App\Http\Controllers\Api\V1\VisitReportController::class, 'downloadForServiceRequest'])->name('service-requests.visit-report');
+    Route::get('/vet-records/{vetRecord}/visit-report', [\App\Http\Controllers\Api\V1\VisitReportController::class, 'downloadForVetRecord'])->name('vet-records.visit-report');
+    Route::get('/consultant-records/{consultantRecord}/visit-report', [\App\Http\Controllers\Api\V1\VisitReportController::class, 'downloadForConsultantRecord'])->name('consultant-records.visit-report');
+    Route::post('/visit-photos/upload', [\App\Http\Controllers\Api\V1\VisitPhotoController::class, 'upload'])->name('visit-photos.upload');
+
     // Vet Records
     Route::get('/farms/{farm}/vet-records', [VetRecordController::class, 'index'])->name('farms.vet-records.index');
     Route::post('/farms/{farm}/vet-records', [VetRecordController::class, 'store'])->name('farms.vet-records.store');
@@ -76,9 +92,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/farms/{farm}/consultant-records', [ConsultantRecordController::class, 'index'])->name('farms.consultant-records.index');
     Route::post('/farms/{farm}/consultant-records', [ConsultantRecordController::class, 'store'])->name('farms.consultant-records.store');
 
-    // Service Requests (Farmer)
+    // Service Requests (Farmer & Practitioner)
     Route::post('/farms/{farm}/service-requests', [ServiceRequestController::class, 'store'])->middleware('phone.verified')->name('farms.service-requests.store');
     Route::get('/service-requests', [ServiceRequestController::class, 'index'])->name('service-requests.index');
+    Route::get('/service-requests/{serviceRequest}', [ServiceRequestController::class, 'show'])->name('service-requests.farmer.show');
+    Route::get('/service-requests/{serviceRequest}/previous-visits', [ServiceRequestController::class, 'previousVisits'])->name('service-requests.previous-visits');
     Route::post('/service-requests/{serviceRequest}/feedback', [ServiceRequestController::class, 'feedback'])->name('service-requests.feedback');
 
     // Practitioner Portal (Vet / Consultant)
@@ -111,6 +129,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
         // Products Catalog (Read-Only for POS and Browsing)
         Route::get('/products', [AdminProductController::class, 'index'])->name('products.index');
+        Route::get('/products/{product}', [AdminProductController::class, 'show'])->name('products.show');
 
         // Point of Sale / Assisted Sale
         Route::post('/pos/sale', [AdminPosController::class, 'store'])->name('pos.sale');
@@ -136,10 +155,19 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::middleware('role:admin')->group(function () {
             // Product Catalog Mutations & Stock Adjustments
             Route::post('/products', [AdminProductController::class, 'store'])->name('products.store');
+            Route::post('/products/editor-image', [AdminProductController::class, 'uploadEditorImage'])->name('products.editor-image');
             Route::patch('/products/{product}', [AdminProductController::class, 'update'])->name('products.update');
             Route::post('/products/{product}/image', [AdminProductController::class, 'uploadImage'])->name('products.image');
+            Route::post('/products/{product}/images', [AdminProductController::class, 'uploadGalleryImage'])->name('products.images.upload');
+            Route::patch('/products/{product}/images/reorder', [AdminProductController::class, 'reorderGalleryImages'])->name('products.images.reorder');
+            Route::patch('/products/{product}/images/{image}', [AdminProductController::class, 'updateGalleryImage'])->name('products.images.update');
+            Route::delete('/products/{product}/images/{image}', [AdminProductController::class, 'deleteGalleryImage'])->name('products.images.delete');
+            Route::post('/products/{product}/documents', [AdminProductController::class, 'uploadDocument'])->name('products.documents.upload');
+            Route::delete('/products/{product}/documents/{document}', [AdminProductController::class, 'deleteDocument'])->name('products.documents.delete');
             Route::patch('/products/{product}/stock', [AdminProductController::class, 'adjustStock'])->name('products.adjust-stock');
             Route::patch('/products/{product}/status', [AdminProductController::class, 'updateStatus'])->name('products.update-status');
+            Route::patch('/products/{product}/featured', [AdminProductController::class, 'toggleFeatured'])->name('products.featured');
+            Route::post('/products/{product}/duplicate', [AdminProductController::class, 'duplicate'])->name('products.duplicate');
 
             // Order Status & Line Items Editing
             Route::put('/orders/{order}', [AdminOrderController::class, 'update'])->name('orders.update');
@@ -168,8 +196,10 @@ Route::middleware('auth:sanctum')->group(function () {
 
             // Service Requests
             Route::get('/service-requests', [AdminServiceRequestController::class, 'index'])->name('service-requests.index');
+            Route::post('/service-requests', [AdminServiceRequestController::class, 'store'])->name('service-requests.store');
             Route::get('/service-requests/metrics', [AdminServiceRequestController::class, 'metrics'])->name('service-requests.metrics');
             Route::get('/service-requests/practitioners', [AdminServiceRequestController::class, 'practitioners'])->name('service-requests.practitioners');
+            Route::get('/service-requests/{serviceRequest}', [AdminServiceRequestController::class, 'show'])->name('service-requests.show');
             Route::patch('/service-requests/{serviceRequest}/assign', [AdminServiceRequestController::class, 'assign'])->name('service-requests.assign');
 
             // Reports & CSV Exports
@@ -185,6 +215,10 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::get('/farmer-approvals/count', [FarmerApprovalController::class, 'count'])->name('farmer-approvals.count');
             Route::patch('/farmer-approvals/{id}/approve', [FarmerApprovalController::class, 'approve'])->name('farmer-approvals.approve');
             Route::patch('/farmer-approvals/{id}/reject', [FarmerApprovalController::class, 'reject'])->name('farmer-approvals.reject');
+
+            // Broadcast Messages
+            Route::get('/broadcasts', [AdminBroadcastController::class, 'index'])->name('broadcasts.index');
+            Route::post('/broadcasts', [AdminBroadcastController::class, 'store'])->name('broadcasts.store');
         });
     });
 });
