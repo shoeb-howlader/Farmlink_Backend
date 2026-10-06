@@ -68,8 +68,8 @@ class ImageUploadAndFarmOrderTest extends TestCase
         $farmer = User::factory()->create();
         $farmer->assignRole('farmer');
 
-        // Oversized > 2MB (2049 KB)
-        $oversized = UploadedFile::fake()->create('big.jpg', 2500, 'image/jpeg');
+        // Oversized > 5MB (5121 KB)
+        $oversized = UploadedFile::fake()->create('big.jpg', 6000, 'image/jpeg');
 
         $this->actingAs($farmer, 'sanctum')
             ->postJson('/api/v1/me/avatar', [

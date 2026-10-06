@@ -234,13 +234,16 @@
     <table class="header-table" cellpadding="0" cellspacing="0">
         <tr>
             <td style="vertical-align: middle;">
-                <h1 class="logo-title">FarmLink</h1>
+                @if(\App\Models\Setting::get('site_logo_url'))
+                    <img src="{{ \App\Models\Setting::get('site_logo_url') }}" alt="{{ \App\Models\Setting::get('site_name', 'FarmLink') }}" style="max-height: 44px; max-width: 180px; object-fit: contain; margin-bottom: 4px; display: block;" />
+                @endif
+                <h1 class="logo-title">{{ \App\Models\Setting::get('site_name', 'FarmLink') }}</h1>
                 <div class="logo-subtitle">Aquaculture Supply & Advisory Network</div>
             </td>
             <td class="company-meta" style="vertical-align: middle;">
-                <strong>FarmLink Operations Depot</strong><br>
-                Khulna & Satkhira Regional Hub, Bangladesh<br>
-                Helpline: +880 1700-000000 | Web: farmlink.com.bd
+                <strong>{{ \App\Models\Setting::get('site_name', 'FarmLink') }} Operations Depot</strong><br>
+                {{ \App\Models\Setting::get('business_hours', 'Khulna & Satkhira Regional Hub, Bangladesh') }}<br>
+                Helpline: {{ \App\Models\Setting::get('contact_phone', '+880 1700-000000') }} | Email: {{ \App\Models\Setting::get('contact_email', 'support@farmlink.com.bd') }}
             </td>
         </tr>
     </table>
@@ -271,7 +274,7 @@
                         <span class="info-label">Payment Mode:</span>
                         <span class="info-value" style="text-transform: uppercase;">
                             @if($order->payment_mode === 'cash') Cash Payment
-                            @elseif($order->payment_mode === 'farmer_credit') Farmer Credit Account
+                            @elseif($order->payment_mode === 'sslcommerz') Online Payment (SSLCommerz)
                             @else Cash on Delivery (COD)
                             @endif
                         </span>
@@ -364,14 +367,31 @@
 
     <!-- Financial Totals -->
     <div style="width: 100%; margin-bottom: 25px;">
+        @php
+            $subtotal = $order->subtotal !== null ? (float) $order->subtotal : (float) $order->total;
+            $deliveryFee = $order->delivery_fee !== null ? (float) $order->delivery_fee : 0.00;
+            $discount = $order->discount_amount !== null ? (float) $order->discount_amount : 0.00;
+        @endphp
         <div class="totals-box">
             <div class="totals-row">
                 <span class="totals-label">Subtotal:</span>
-                <span class="totals-value"><span class="currency-symbol">&#x09F3;</span> {{ number_format((float) $order->total, 2) }}</span>
+                <span class="totals-value"><span class="currency-symbol">&#x09F3;</span> {{ number_format($subtotal, 2) }}</span>
             </div>
+            @if($discount > 0)
+            <div class="totals-row" style="color: #b91c1c;">
+                <span class="totals-label" style="color: #b91c1c;">Discount {{ $order->coupon ? '(' . $order->coupon->code . ')' : '' }}:</span>
+                <span class="totals-value" style="color: #b91c1c;">- <span class="currency-symbol">&#x09F3;</span> {{ number_format($discount, 2) }}</span>
+            </div>
+            @endif
             <div class="totals-row">
                 <span class="totals-label">Delivery Fee:</span>
-                <span class="totals-value"><span class="currency-symbol">&#x09F3;</span> 0.00</span>
+                <span class="totals-value">
+                    @if($deliveryFee > 0)
+                        <span class="currency-symbol">&#x09F3;</span> {{ number_format($deliveryFee, 2) }}
+                    @else
+                        <span style="color: #059669; font-weight: 700;">FREE</span>
+                    @endif
+                </span>
             </div>
             <div class="totals-row totals-grand">
                 <span class="totals-label">Total Payable:</span>

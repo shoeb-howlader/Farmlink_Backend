@@ -30,127 +30,30 @@ class FarmerApprovalQueueTest extends TestCase
         $this->deo->syncRoles(['data_entry_operator']);
     }
 
-    public function test_non_admin_cannot_access_approval_queue(): void
+    public function test_retired_farmer_approval_endpoints_return_404(): void
     {
-        $farmer = User::factory()->create();
-        $farmer->syncRoles(['farmer']);
-
-        $this->actingAs($farmer, 'sanctum')
+        $this->actingAs($this->admin, 'sanctum')
             ->getJson('/api/v1/admin/farmer-approvals')
-            ->assertStatus(403);
+            ->assertStatus(404);
 
-        $this->actingAs($farmer, 'sanctum')
-            ->patchJson("/api/v1/admin/farmer-approvals/{$farmer->id}/approve")
-            ->assertStatus(403);
+        $this->actingAs($this->admin, 'sanctum')
+            ->getJson('/api/v1/admin/farmer-approvals/count')
+            ->assertStatus(404);
+
+        $this->actingAs($this->admin, 'sanctum')
+            ->patchJson('/api/v1/admin/farmer-approvals/1/approve')
+            ->assertStatus(404);
+
+        $this->actingAs($this->admin, 'sanctum')
+            ->patchJson('/api/v1/admin/farmer-approvals/1/reject')
+            ->assertStatus(404);
     }
 
-    public function test_admin_can_list_pending_farmer_approvals(): void
+    public function test_unverified_farmer_cannot_place_order_or_submit_service_request(): void
     {
-        $pending1 = User::factory()->pendingApproval()->create(['name' => 'Pending Rahim']);
-        $pending1->syncRoles(['farmer']);
-
-        $pending2 = User::factory()->pendingApproval()->create(['name' => 'Pending Karim']);
-        $pending2->syncRoles(['farmer']);
-
-        $activeFarmer = User::factory()->create(['name' => 'Active Salam', 'status' => 'active']);
-        $activeFarmer->syncRoles(['farmer']);
-
-        $response = $this->actingAs($this->admin, 'sanctum')
-            ->getJson('/api/v1/admin/farmer-approvals');
-
-        $response->assertOk()
-            ->assertJsonPath('data.pending_count', 2)
-            ->assertJsonCount(2, 'data.farmers');
-    }
-
-    public function test_admin_can_get_pending_approvals_count(): void
-    {
-        $pending = User::factory(3)->pendingApproval()->create();
-        foreach ($pending as $p) {
-            $p->syncRoles(['farmer']);
-        }
-
-        $response = $this->actingAs($this->admin, 'sanctum')
-            ->getJson('/api/v1/admin/farmer-approvals/count');
-
-        $response->assertOk()
-            ->assertJsonPath('data.pending_count', 3);
-    }
-
-    public function test_admin_can_approve_farmer(): void
-    {
-        $farmer = User::factory()->pendingApproval()->create([
-            'name' => 'Jashim Farmer',
-            'phone' => '01812345678',
+        $farmer = User::factory()->unverified()->create([
+            'status' => 'pending_verification',
         ]);
-        $farmer->syncRoles(['farmer']);
-
-        $response = $this->actingAs($this->admin, 'sanctum')
-            ->patchJson("/api/v1/admin/farmer-approvals/{$farmer->id}/approve");
-
-        $response->assertOk()
-            ->assertJsonPath('data.farmer.status', 'active');
-
-        $fresh = $farmer->fresh();
-        $this->assertEquals('active', $fresh->status);
-        $this->assertTrue($fresh->is_active);
-        $this->assertNotNull($fresh->approved_at);
-        $this->assertEquals($this->admin->id, $fresh->approved_by);
-
-        // Check ActivityLog entry
-        $log = ActivityLog::where('action', 'farmer.approved')
-            ->where('user_id', $this->admin->id)
-            ->first();
-        $this->assertNotNull($log);
-        $this->assertEquals($farmer->id, $log->changes['farmer_id']);
-
-        // Check notification dispatched to farmer
-        $notification = AdminNotification::where('user_id', $farmer->id)
-            ->where('type', 'farmer.approved')
-            ->first();
-        $this->assertNotNull($notification);
-    }
-
-    public function test_admin_can_reject_farmer_with_reason(): void
-    {
-        $farmer = User::factory()->pendingApproval()->create([
-            'name' => 'Rejected Farmer',
-            'phone' => '01899999999',
-        ]);
-        $farmer->syncRoles(['farmer']);
-
-        $response = $this->actingAs($this->admin, 'sanctum')
-            ->patchJson("/api/v1/admin/farmer-approvals/{$farmer->id}/reject", [
-                'reason' => 'Invalid pond coordinates provided.',
-            ]);
-
-        $response->assertOk()
-            ->assertJsonPath('data.farmer.status', 'rejected');
-
-        $fresh = $farmer->fresh();
-        $this->assertEquals('rejected', $fresh->status);
-        $this->assertFalse($fresh->is_active);
-        $this->assertEquals('Invalid pond coordinates provided.', $fresh->rejection_reason);
-        $this->assertNotNull($fresh->rejected_at);
-        $this->assertEquals($this->admin->id, $fresh->rejected_by);
-
-        // Check ActivityLog
-        $log = ActivityLog::where('action', 'farmer.rejected')
-            ->where('user_id', $this->admin->id)
-            ->first();
-        $this->assertNotNull($log);
-        $this->assertEquals('Invalid pond coordinates provided.', $log->changes['reason']);
-
-        // Check notification to farmer
-        $notification = AdminNotification::where('user_id', $farmer->id)
-            ->where('type', 'farmer.rejected')
-            ->first();
-        $this->assertNotNull($notification);
-    }
-
-    public function test_pending_approval_farmer_cannot_place_order_or_submit_service_request(): void
-    {
-        $farmer = User::factory()->pendingApproval()->create();
         $farmer->syncRoles(['farmer']);
 
         $farm = Farm::factory()->create(['user_id' => $farmer->id]);
@@ -163,17 +66,17 @@ class FarmerApprovalQueueTest extends TestCase
                 'items' => [['product_id' => $product->id, 'quantity' => 1]],
             ]);
         $orderRes->assertStatus(403)
-            ->assertJsonPath('code', 'FARMER_PENDING_APPROVAL');
+            ->assertJsonPath('code', 'PHONE_NOT_VERIFIED');
 
         // Cannot submit service request
         $srRes = $this->actingAs($farmer, 'sanctum')
             ->postJson("/api/v1/farms/{$farm->id}/service-requests", [
-                'type' => 'vet_visit',
+                'type' => 'vet',
                 'description' => 'Need emergency pond diagnosis',
                 'urgency' => 'urgent',
             ]);
         $srRes->assertStatus(403)
-            ->assertJsonPath('code', 'FARMER_PENDING_APPROVAL');
+            ->assertJsonPath('code', 'PHONE_NOT_VERIFIED');
 
         // But CAN register farm
         $farmRes = $this->actingAs($farmer, 'sanctum')
@@ -189,5 +92,135 @@ class FarmerApprovalQueueTest extends TestCase
                 'farming_system' => 'Extensive',
             ]);
         $farmRes->assertStatus(201);
+    }
+
+    public function test_otp_verification_immediately_activates_farmer_without_approval_gate(): void
+    {
+        $farmer = User::factory()->unverified()->create([
+            'phone' => '01812345678',
+            'phone_otp' => '654321',
+            'phone_otp_expires_at' => now()->addMinutes(10),
+            'status' => 'pending_verification',
+        ]);
+        $farmer->syncRoles(['farmer']);
+
+        $response = $this->actingAs($farmer, 'sanctum')
+            ->postJson('/api/v1/auth/otp/verify', [
+                'phone' => '01812345678',
+                'otp' => '654321',
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.status', 'active')
+            ->assertJsonPath('data.verified', true);
+
+        $fresh = $farmer->fresh();
+        $this->assertEquals('active', $fresh->status);
+        $this->assertNotNull($fresh->phone_verified_at);
+        $this->assertNull($fresh->phone_otp);
+
+        // Activity log recorded
+        $log = ActivityLog::where('action', 'farmer.registered')
+            ->where('subject_id', $farmer->id)
+            ->first();
+        $this->assertNotNull($log);
+
+        // No pending approval notification
+        $pendingNotification = AdminNotification::where('type', 'farmer.pending_approval')->first();
+        $this->assertNull($pendingNotification);
+    }
+
+    public function test_farmer_who_completes_otp_can_immediately_order_and_submit_service_request(): void
+    {
+        // 1. Self-registering farmer completes OTP
+        $farmer = User::factory()->unverified()->create([
+            'phone' => '01711223344',
+            'phone_otp' => '112233',
+            'phone_otp_expires_at' => now()->addMinutes(10),
+            'status' => 'pending_verification',
+        ]);
+        $farmer->syncRoles(['farmer']);
+
+        $verifyRes = $this->actingAs($farmer, 'sanctum')
+            ->postJson('/api/v1/auth/otp/verify', [
+                'phone' => '01711223344',
+                'otp' => '112233',
+            ]);
+        $verifyRes->assertOk();
+
+        // 2. Immediately create farm
+        $farmRes = $this->actingAs($farmer, 'sanctum')
+            ->postJson('/api/v1/farms', [
+                'farm_name' => 'Active Shrimp Farm',
+                'farm_type' => 'Own',
+                'total_area' => 10.0,
+                'pond_count' => 3,
+                'cultivation_area' => 8.0,
+                'district' => 'Satkhira',
+                'upazila' => 'Debhata',
+                'main_culture_type' => 'Bagda',
+                'farming_system' => 'Semi-Intensive',
+            ]);
+        $farmRes->assertStatus(201);
+        $farmId = $farmRes->json('data.id');
+
+        // 3. Immediately place an order - NO admin approval needed!
+        $product = Product::factory()->create(['price' => 250, 'stock' => 50]);
+        $orderRes = $this->actingAs($farmer, 'sanctum')
+            ->postJson('/api/v1/orders', [
+                'shipping_address' => 'Debhata, Satkhira',
+                'items' => [
+                    ['product_id' => $product->id, 'quantity' => 2],
+                ],
+            ]);
+        $orderRes->assertStatus(201)
+            ->assertJsonPath('data.status', 'pending');
+
+        // 4. Immediately submit a service request - NO admin approval needed!
+        $srRes = $this->actingAs($farmer, 'sanctum')
+            ->postJson("/api/v1/farms/{$farmId}/service-requests", [
+                'type' => 'vet',
+                'description' => 'Water quality test and pathogen screening',
+                'urgency' => 'normal',
+            ]);
+        $srRes->assertStatus(201)
+            ->assertJsonPath('data.status', 'pending');
+    }
+
+    public function test_newly_verified_farmer_appears_in_admin_farmers_directory(): void
+    {
+        $farmer = User::factory()->create([
+            'name' => 'Newly Registered Farmer',
+            'phone' => '01799887766',
+            'status' => 'active',
+            'phone_verified_at' => now(),
+        ]);
+        $farmer->syncRoles(['farmer']);
+
+        $response = $this->actingAs($this->admin, 'sanctum')
+            ->getJson('/api/v1/admin/farmers');
+
+        $response->assertOk();
+        $farmerNames = collect($response->json('data'))->pluck('name');
+        $this->assertTrue($farmerNames->contains('Newly Registered Farmer'));
+    }
+
+    public function test_deo_assisted_farmer_registration_is_immediately_active(): void
+    {
+        $response = $this->actingAs($this->deo, 'sanctum')
+            ->postJson('/api/v1/admin/farmers', [
+                'name' => 'In-Person Farmer Kamal',
+                'phone' => '01511223344',
+                'district' => 'Bagerhat',
+                'gender' => 'male',
+            ]);
+
+        $response->assertStatus(201);
+        $newFarmerId = $response->json('data.id');
+
+        $newFarmer = User::find($newFarmerId);
+        $this->assertEquals('active', $newFarmer->status);
+        $this->assertNotNull($newFarmer->phone_verified_at);
+        $this->assertTrue($newFarmer->is_active);
     }
 }

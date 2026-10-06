@@ -24,28 +24,30 @@ class ReportController extends ApiController
 
         $dateFrom = $request->query('from', now()->subDays(30)->toDateString());
         $dateTo = $request->query('to', now()->toDateString());
+        $datetimeStart = $dateFrom . ' 00:00:00';
+        $datetimeEnd = $dateTo . ' 23:59:59';
+        $excludedStatuses = ['cancelled', 'rejected', 'returned'];
 
-        $ordersQuery = Order::whereDate('created_at', '>=', $dateFrom)
-            ->whereDate('created_at', '<=', $dateTo);
+        $ordersQuery = Order::whereBetween('created_at', [$datetimeStart, $datetimeEnd]);
 
-        $totalRevenue = (clone $ordersQuery)->whereNotIn('status', ['cancelled', 'rejected'])->sum('total');
-        $totalOrders = (clone $ordersQuery)->count();
-        $completedOrders = (clone $ordersQuery)->where('status', 'delivered')->count();
-        $cancelledOrders = (clone $ordersQuery)->whereIn('status', ['cancelled', 'rejected'])->count();
-        $avgOrderValue = $totalOrders > 0 ? round($totalRevenue / max(1, ($totalOrders - $cancelledOrders)), 2) : 0;
-
-        // Breakdown by status
+        // Breakdown by status (computes all metric sums and counts in 1 aggregated query)
         $statusBreakdown = (clone $ordersQuery)
             ->select('status', DB::raw('count(*) as count'), DB::raw('sum(total) as total'))
             ->groupBy('status')
             ->get();
 
+        $totalOrders = (int) $statusBreakdown->sum('count');
+        $completedOrders = (int) ($statusBreakdown->firstWhere('status', 'delivered')?->count ?? 0);
+        $cancelledOrders = (int) $statusBreakdown->whereIn('status', $excludedStatuses)->sum('count');
+        $totalRevenue = (float) $statusBreakdown->whereNotIn('status', $excludedStatuses)->sum('total');
+        $validOrdersCount = $totalOrders - $cancelledOrders;
+        $avgOrderValue = $validOrdersCount > 0 ? round($totalRevenue / $validOrdersCount, 2) : 0;
+
         // Top products by quantity sold
         $topProducts = OrderItem::select('product_id', DB::raw('sum(quantity) as total_qty'), DB::raw('sum(price_at_purchase * quantity) as total_sales'))
-            ->whereHas('order', function ($q) use ($dateFrom, $dateTo) {
-                $q->whereDate('created_at', '>=', $dateFrom)
-                    ->whereDate('created_at', '<=', $dateTo)
-                    ->whereNotIn('status', ['cancelled', 'rejected']);
+            ->whereHas('order', function ($q) use ($datetimeStart, $datetimeEnd, $excludedStatuses) {
+                $q->whereBetween('created_at', [$datetimeStart, $datetimeEnd])
+                    ->whereNotIn('status', $excludedStatuses);
             })
             ->with('product:id,name,sku,price')
             ->groupBy('product_id')
@@ -216,21 +218,21 @@ class ReportController extends ApiController
             ->whereHas('orders', function ($q) use ($year, $month) {
                 $q->whereMonth('created_at', $month)
                     ->whereYear('created_at', $year)
-                    ->whereNotIn('status', ['cancelled', 'rejected'])
+                    ->whereNotIn('status', ['cancelled', 'rejected', 'returned'])
                     ->where('total', '>', 0);
             })
             ->withSum([
                 'orders' => function ($q) use ($year, $month) {
                     $q->whereMonth('created_at', $month)
                         ->whereYear('created_at', $year)
-                        ->whereNotIn('status', ['cancelled', 'rejected']);
+                        ->whereNotIn('status', ['cancelled', 'rejected', 'returned']);
                 }
             ], 'total')
             ->withCount([
                 'orders' => function ($q) use ($year, $month) {
                     $q->whereMonth('created_at', $month)
                         ->whereYear('created_at', $year)
-                        ->whereNotIn('status', ['cancelled', 'rejected']);
+                        ->whereNotIn('status', ['cancelled', 'rejected', 'returned']);
                 }
             ])
             ->orderByDesc('orders_sum_total')

@@ -59,6 +59,22 @@ abstract class ApiController extends Controller
     }
 
     /**
+     * Return a standardized forbidden (403) JSON response.
+     */
+    protected function forbiddenResponse(string $message = 'Forbidden'): JsonResponse
+    {
+        return $this->errorResponse($message, Response::HTTP_FORBIDDEN);
+    }
+
+    /**
+     * Return a standardized not found (404) JSON response.
+     */
+    protected function notFoundResponse(string $message = 'Resource not found'): JsonResponse
+    {
+        return $this->errorResponse($message, Response::HTTP_NOT_FOUND);
+    }
+
+    /**
      * Return a standardized no content (204) JSON response.
      */
     protected function noContentResponse(): JsonResponse

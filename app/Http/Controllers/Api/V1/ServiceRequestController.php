@@ -20,29 +20,86 @@ class ServiceRequestController extends ApiController
     {
         $user = $request->user();
 
-        $query = ServiceRequest::with(['farm', 'farmer', 'assignedPractitioner', 'fulfilledRecord', 'parentRecord'])
-            ->urgentFirst();
+        $query = ServiceRequest::with([
+            'farm',
+            'farmer',
+            'assignedPractitioner',
+            'fulfilledRecord' => function (\Illuminate\Database\Eloquent\Relations\MorphTo $morphTo) {
+                $morphTo->morphWith([
+                    \App\Models\VetRecord::class => ['prescription.items.product', 'vet', 'farm', 'testResults', 'photos'],
+                    \App\Models\ConsultantRecord::class => ['prescription.items.product', 'consultant', 'farm', 'testResults', 'photos'],
+                ]);
+            },
+            'parentRecord' => function (\Illuminate\Database\Eloquent\Relations\MorphTo $morphTo) {
+                $morphTo->morphWith([
+                    \App\Models\VetRecord::class => ['prescription.items.product', 'vet', 'farm', 'testResults', 'photos'],
+                    \App\Models\ConsultantRecord::class => ['prescription.items.product', 'consultant', 'farm', 'testResults', 'photos'],
+                ]);
+            },
+        ])->urgentFirst();
 
         if (! $user->hasRole('admin')) {
             $query->where('farmer_id', $user->id);
         }
 
-        if ($request->filled('status')) {
-            $query->where('status', $request->query('status'));
+        if ($request->filled('status') && $request->query('status') !== 'all') {
+            $status = $request->query('status');
+            if ($status === 'pending' || $status === 'open') {
+                $query->whereIn('status', ['pending', 'assigned', 'in_progress']);
+            } elseif ($status === 'pending_only') {
+                $query->where('status', 'pending');
+            } else {
+                $query->where('status', $status);
+            }
         }
 
-        if ($request->filled('type')) {
+        if ($request->filled('type') && $request->query('type') !== 'all') {
             $query->where('type', $request->query('type'));
         }
 
-        if ($request->filled('urgency')) {
+        if ($request->filled('urgency') && $request->query('urgency') !== 'all') {
             $query->where('urgency', $request->query('urgency'));
         }
 
+        if ($request->filled('search')) {
+            $search = trim($request->query('search'));
+            $query->where(function ($q) use ($search) {
+                $q->where('description', 'like', "%{$search}%")
+                    ->orWhereHas('farm', function ($fq) use ($search) {
+                        $fq->where('farm_name', 'like', "%{$search}%")
+                            ->orWhere('district', 'like', "%{$search}%");
+                    })
+                    ->orWhereHas('assignedPractitioner', function ($pq) use ($search) {
+                        $pq->where('name', 'like', "%{$search}%");
+                    });
+            });
+        }
+
+        $baseCountQuery = ServiceRequest::query();
+        if (! $user->hasRole('admin')) {
+            $baseCountQuery->where('farmer_id', $user->id);
+        }
+
+        $countsRaw = (clone $baseCountQuery)->selectRaw("
+            count(*) as all_count,
+            count(case when status in ('pending', 'assigned', 'in_progress') then 1 end) as pending_count,
+            count(case when status = 'completed' then 1 end) as completed_count,
+            count(case when status in ('pending', 'assigned', 'in_progress') and urgency = 'urgent' then 1 end) as urgent_count
+        ")->first();
+
+        $counts = [
+            'all' => (int) ($countsRaw->all_count ?? 0),
+            'pending' => (int) ($countsRaw->pending_count ?? 0),
+            'completed' => (int) ($countsRaw->completed_count ?? 0),
+            'urgent' => (int) ($countsRaw->urgent_count ?? 0),
+        ];
+
         $serviceRequests = $query->paginate($request->integer('per_page', 15));
+        $data = ServiceRequestResource::collection($serviceRequests)->response()->getData(true);
+        $data['counts'] = $counts;
 
         return $this->successResponse(
-            ServiceRequestResource::collection($serviceRequests)->response()->getData(true),
+            $data,
             'Service requests retrieved successfully'
         );
     }
@@ -77,6 +134,14 @@ class ServiceRequestController extends ApiController
     public function store(StoreServiceRequestRequest $request, Farm $farm): JsonResponse
     {
         $user = $request->user();
+
+        if ($user->is_blacklisted) {
+            return $this->errorResponse('Your account is currently restricted from requesting field consultations. Please contact customer support.', 403);
+        }
+
+        if ($user->consultations_blocked) {
+            return $this->errorResponse('Consultations and pond doctor visit requests are currently restricted for your account. Please contact FarmLink customer support at 01711223344 for assistance.', 403);
+        }
 
         if ($farm->user_id !== $user->id && ! $user->hasRole('admin')) {
             return $this->errorResponse('Unauthorized to request services for this farm', 403);

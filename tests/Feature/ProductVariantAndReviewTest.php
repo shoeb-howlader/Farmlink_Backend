@@ -98,7 +98,8 @@ test('order line items reference specific variant and deduct variant stock', fun
     ]);
 
     $response->assertStatus(201)
-        ->assertJsonPath('data.total', 1350)
+        ->assertJsonPath('data.subtotal', 1350)
+        ->assertJsonPath('data.total', 1400)
         ->assertJsonPath('data.items.0.product_variant_id', $smallVariant->id)
         ->assertJsonPath('data.items.0.variant_label', '250g');
 

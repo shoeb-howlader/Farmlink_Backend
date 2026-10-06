@@ -25,6 +25,10 @@ class ConsultantRecord extends Model
         'visit_date',
         'recommendation',
         'next_follow_up',
+        'original_follow_up_date',
+        'rescheduled_reason',
+        'rescheduled_at',
+        'rescheduled_by',
         'parent_record_id',
         'follow_up_service_request_id',
         'lead_reminder_sent_at',
@@ -41,6 +45,8 @@ class ConsultantRecord extends Model
         return [
             'visit_date' => 'date',
             'next_follow_up' => 'date',
+            'original_follow_up_date' => 'date',
+            'rescheduled_at' => 'datetime',
             'lead_reminder_sent_at' => 'datetime',
             'overdue_reminder_sent_at' => 'datetime',
         ];
@@ -64,6 +70,11 @@ class ConsultantRecord extends Model
     public function consultant(): BelongsTo
     {
         return $this->belongsTo(User::class, 'consultant_id');
+    }
+
+    public function rescheduler(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'rescheduled_by');
     }
 
     /**
@@ -124,5 +135,15 @@ class ConsultantRecord extends Model
     public function photos(): HasMany
     {
         return $this->hasMany(VisitPhoto::class)->orderBy('sort_order')->orderBy('id');
+    }
+
+    /**
+     * Get the service request fulfilled by this visit.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\MorphOne<ServiceRequest, $this>
+     */
+    public function fulfilledServiceRequest(): \Illuminate\Database\Eloquent\Relations\MorphOne
+    {
+        return $this->morphOne(ServiceRequest::class, 'fulfilled_record');
     }
 }

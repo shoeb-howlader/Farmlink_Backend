@@ -27,7 +27,10 @@ class ProductController extends ApiController
                 });
             };
 
-            $featured = Product::where('is_active', true)
+            $featured = Product::with(['variants', 'images', 'specs', 'documents'])
+                ->withAvg('reviews', 'rating')
+                ->withCount('reviews')
+                ->where('is_active', true)
                 ->where('is_featured', true)
                 ->where($stockScope)
                 ->latest()
@@ -37,7 +40,10 @@ class ProductController extends ApiController
             // Fallback: if fewer than 4 featured products, fill with in-stock
             if ($featured->count() < 4) {
                 $excludeIds = $featured->pluck('id');
-                $fillers = Product::where('is_active', true)
+                $fillers = Product::with(['variants', 'images', 'specs', 'documents'])
+                    ->withAvg('reviews', 'rating')
+                    ->withCount('reviews')
+                    ->where('is_active', true)
                     ->where($stockScope)
                     ->whereNotIn('id', $excludeIds)
                     ->latest()
@@ -53,7 +59,10 @@ class ProductController extends ApiController
             );
         }
 
-        $query = Product::where('is_active', true)->with(['variants', 'images', 'specs', 'documents']);
+        $query = Product::where('is_active', true)
+            ->with(['variants', 'images', 'specs', 'documents'])
+            ->withAvg('reviews', 'rating')
+            ->withCount('reviews');
 
         if ($request->filled('category')) {
             $catInput = strtolower(trim((string) $request->query('category')));
@@ -102,38 +111,18 @@ class ProductController extends ApiController
             $query->latest();
         }
 
-        $perPage = $request->query('per_page');
-        $page = $request->query('page');
-        $paginate = $request->boolean('paginate') || $perPage !== null || $page !== null;
-
-        if ($paginate) {
-            $limit = max(1, min((int) ($perPage ?? 12), 24));
-            $paginated = $query->paginate($limit);
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Products retrieved successfully',
-                'data' => ProductResource::collection($paginated->items()),
-                'meta' => [
-                    'current_page' => $paginated->currentPage(),
-                    'last_page' => $paginated->lastPage(),
-                    'per_page' => $paginated->perPage(),
-                    'total' => $paginated->total(),
-                ],
-            ]);
-        }
-
-        $products = $query->get();
+        $limit = max(1, min((int) ($request->query('per_page') ?? 24), 50));
+        $paginated = $query->paginate($limit);
 
         return response()->json([
             'success' => true,
             'message' => 'Products retrieved successfully',
-            'data' => ProductResource::collection($products),
+            'data' => ProductResource::collection($paginated->items()),
             'meta' => [
-                'current_page' => 1,
-                'last_page' => 1,
-                'per_page' => $products->count(),
-                'total' => $products->count(),
+                'current_page' => $paginated->currentPage(),
+                'last_page' => $paginated->lastPage(),
+                'per_page' => $paginated->perPage(),
+                'total' => $paginated->total(),
             ],
         ]);
     }

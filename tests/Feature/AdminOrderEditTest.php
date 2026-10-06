@@ -228,4 +228,88 @@ class AdminOrderEditTest extends TestCase
         ]);
         $farmerResponse->assertForbidden();
     }
+
+    public function test_admin_can_update_order_delivery_address_and_fee_and_recalculates_total(): void
+    {
+        $order = Order::create([
+            'user_id' => $this->farmer->id,
+            'farm_id' => $this->farm->id,
+            'status' => 'confirmed',
+            'subtotal' => 500.00,
+            'delivery_fee' => 50.00,
+            'discount_amount' => 0.00,
+            'total' => 550.00,
+            'delivery_address' => 'Old Road 1',
+        ]);
+
+        $response = $this->actingAs($this->admin)->patchJson("/api/v1/admin/orders/{$order->id}/delivery", [
+            'delivery_address' => 'Pond 3 Feeder Bank, Rampal, Bagerhat',
+            'delivery_fee' => 120.00,
+            'recipient_name' => 'Manager Kabir',
+            'recipient_phone' => '01799887766',
+            'district' => 'Bagerhat',
+            'upazila' => 'Rampal',
+            'reason_note' => 'Special boat transit surcharge added as requested by farmer',
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.delivery_fee', 120)
+            ->assertJsonPath('data.total', 620)
+            ->assertJsonPath('data.delivery_address', 'Pond 3 Feeder Bank, Rampal, Bagerhat')
+            ->assertJsonPath('data.recipient_name', 'Manager Kabir');
+
+        $order->refresh();
+        $this->assertEquals(120.00, (float) $order->delivery_fee);
+        $this->assertEquals(620.00, (float) $order->total);
+        $this->assertEquals('Pond 3 Feeder Bank, Rampal, Bagerhat', $order->delivery_address);
+
+        // Verify Activity Log
+        $this->assertDatabaseHas('activity_logs', [
+            'action' => 'order.delivery_updated',
+            'subject_type' => Order::class,
+            'subject_id' => $order->id,
+        ]);
+    }
+
+    public function test_admin_cannot_update_delivery_on_dispatched_or_delivered_order(): void
+    {
+        $order = Order::create([
+            'user_id' => $this->farmer->id,
+            'status' => 'delivered',
+            'subtotal' => 200.00,
+            'delivery_fee' => 0.00,
+            'total' => 200.00,
+            'delivery_address' => 'Old Address',
+        ]);
+
+        $response = $this->actingAs($this->admin)->patchJson("/api/v1/admin/orders/{$order->id}/delivery", [
+            'delivery_address' => 'New Address',
+            'delivery_fee' => 50.00,
+        ]);
+
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['status']);
+    }
+
+    public function test_non_admin_cannot_update_order_delivery(): void
+    {
+        $order = Order::create([
+            'user_id' => $this->farmer->id,
+            'status' => 'pending',
+            'subtotal' => 200.00,
+            'delivery_fee' => 0.00,
+            'total' => 200.00,
+            'delivery_address' => 'Old Address',
+        ]);
+
+        $this->actingAs($this->deo)->patchJson("/api/v1/admin/orders/{$order->id}/delivery", [
+            'delivery_address' => 'New Address',
+            'delivery_fee' => 50.00,
+        ])->assertForbidden();
+
+        $this->actingAs($this->farmer)->patchJson("/api/v1/admin/orders/{$order->id}/delivery", [
+            'delivery_address' => 'New Address',
+            'delivery_fee' => 50.00,
+        ])->assertForbidden();
+    }
 }

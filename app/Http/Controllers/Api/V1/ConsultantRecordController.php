@@ -131,6 +131,18 @@ class ConsultantRecordController extends ApiController
                         ],
                         $serviceRequest->farmer_id
                     );
+
+                    // Supplementary email channel with visit report PDF attachment for farmer
+                    $farmerUser = $serviceRequest->farmer ?? $farm->user;
+                    if ($farmerUser && $farmerUser->email) {
+                        try {
+                            $pdfBinary = app(\App\Services\PdfDocumentService::class)->generateVisitReportPdf($record, false, $serviceRequest);
+                            \Illuminate\Support\Facades\Mail::to($farmerUser->email)
+                                ->queue(new \App\Mail\VisitReportMail($serviceRequest, $record, $farmerUser, $request->user(), false, $pdfBinary));
+                        } catch (\Throwable $e) {
+                            \Illuminate\Support\Facades\Log::warning("[VISIT REPORT MAIL ERROR] Could not queue email for SR #{$serviceRequest->id}: " . $e->getMessage());
+                        }
+                    }
                 }
             }
 

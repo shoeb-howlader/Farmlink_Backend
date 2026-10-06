@@ -24,7 +24,7 @@ class UpdateOrderStatusRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'status' => ['required', 'string', Rule::in(['pending', 'confirmed', 'dispatched', 'delivered', 'cancelled', 'rejected'])],
+            'status' => ['required', 'string', Rule::in(['pending_payment', 'pending', 'confirmed', 'dispatched', 'delivered', 'cancelled', 'rejected', 'returned'])],
         ];
     }
 }

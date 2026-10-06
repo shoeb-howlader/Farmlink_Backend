@@ -335,3 +335,64 @@ test('order status update requires valid status', function () {
         ->assertStatus(422)
         ->assertJsonValidationErrors(['status']);
 });
+
+test('order automatically snapshots delivery location from destination farm', function () {
+    $farmer = User::factory()->farmer()->create(['name' => 'Rahim Farmer', 'phone' => '01711223344']);
+    $farm = \App\Models\Farm::factory()->create([
+        'user_id' => $farmer->id,
+        'district' => 'Khulna',
+        'upazila' => 'Dumuria',
+        'union' => 'Sahos',
+        'farm_address' => 'Near West canal sluice gate',
+    ]);
+    $product = Product::factory()->create(['price' => 500, 'stock' => 10]);
+
+    Sanctum::actingAs($farmer);
+
+    $response = $this->postJson('/api/v1/orders', [
+        'farm_id' => $farm->id,
+        'items' => [
+            ['product_id' => $product->id, 'quantity' => 2],
+        ],
+    ]);
+
+    $response->assertStatus(201)
+        ->assertJsonPath('data.recipient_name', 'Rahim Farmer')
+        ->assertJsonPath('data.recipient_phone', '01711223344')
+        ->assertJsonPath('data.district', 'Khulna')
+        ->assertJsonPath('data.upazila', 'Dumuria')
+        ->assertJsonPath('data.union', 'Sahos')
+        ->assertJsonPath('data.delivery_address', 'Near West canal sluice gate');
+});
+
+test('order saves custom delivery address and geolocation when explicitly provided', function () {
+    $farmer = User::factory()->farmer()->create();
+    $farm = \App\Models\Farm::factory()->create(['user_id' => $farmer->id]);
+    $product = Product::factory()->create(['price' => 300, 'stock' => 10]);
+
+    Sanctum::actingAs($farmer);
+
+    $response = $this->postJson('/api/v1/orders', [
+        'farm_id' => $farm->id,
+        'recipient_name' => 'Habib Brother',
+        'recipient_phone' => '01899887766',
+        'delivery_address' => 'Road 4, House 12, Upazila Hub',
+        'district' => 'Bagerhat',
+        'upazila' => 'Mongla',
+        'union' => 'Burirdanga',
+        'notes' => 'Deliver before 3pm',
+        'items' => [
+            ['product_id' => $product->id, 'quantity' => 1],
+        ],
+    ]);
+
+    $response->assertStatus(201)
+        ->assertJsonPath('data.recipient_name', 'Habib Brother')
+        ->assertJsonPath('data.recipient_phone', '01899887766')
+        ->assertJsonPath('data.delivery_address', 'Road 4, House 12, Upazila Hub')
+        ->assertJsonPath('data.district', 'Bagerhat')
+        ->assertJsonPath('data.upazila', 'Mongla')
+        ->assertJsonPath('data.union', 'Burirdanga')
+        ->assertJsonPath('data.notes', 'Deliver before 3pm');
+});
+

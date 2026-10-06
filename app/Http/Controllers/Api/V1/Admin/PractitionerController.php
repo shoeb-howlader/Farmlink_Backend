@@ -49,7 +49,7 @@ class PractitionerController extends ApiController
         $records = collect();
 
         if ($isVet || $practitioner->hasRole('admin')) {
-            $vetRecords = VetRecord::with(['farm.user', 'farm'])
+            $vetRecords = VetRecord::with(['farm.user', 'farm', 'prescription', 'fulfilledServiceRequest:id,fulfilled_record_type,fulfilled_record_id'])
                 ->where('vet_id', $practitioner->id)
                 ->latest('visit_date')
                 ->get()
@@ -62,6 +62,11 @@ class PractitionerController extends ApiController
                         'treatment' => $rec->treatment,
                         'medicine_given' => $rec->medicine_given,
                         'recommendation' => null,
+                        'prescription' => $rec->prescription ? [
+                            'id' => $rec->prescription->id,
+                            'pdf_url' => $rec->prescription->pdf_url,
+                        ] : null,
+                        'service_request_id' => $rec->fulfilledServiceRequest?->id,
                         'next_follow_up' => $rec->next_follow_up?->toDateString(),
                         'farm' => $rec->farm ? [
                             'id' => $rec->farm->id,
@@ -80,7 +85,7 @@ class PractitionerController extends ApiController
         }
 
         if ($isConsultant || $practitioner->hasRole('admin')) {
-            $consultantRecords = ConsultantRecord::with(['farm.user', 'farm'])
+            $consultantRecords = ConsultantRecord::with(['farm.user', 'farm', 'prescription', 'fulfilledServiceRequest:id,fulfilled_record_type,fulfilled_record_id'])
                 ->where('consultant_id', $practitioner->id)
                 ->latest('visit_date')
                 ->get()
@@ -93,6 +98,11 @@ class PractitionerController extends ApiController
                         'treatment' => null,
                         'medicine_given' => null,
                         'recommendation' => $rec->recommendation,
+                        'prescription' => $rec->prescription ? [
+                            'id' => $rec->prescription->id,
+                            'pdf_url' => $rec->prescription->pdf_url,
+                        ] : null,
+                        'service_request_id' => $rec->fulfilledServiceRequest?->id,
                         'next_follow_up' => $rec->next_follow_up?->toDateString(),
                         'farm' => $rec->farm ? [
                             'id' => $rec->farm->id,
@@ -111,11 +121,14 @@ class PractitionerController extends ApiController
         }
 
         // Assigned service requests
-        $assignedRequests = ServiceRequest::with(['farm', 'farmer'])
+        $assignedRequests = ServiceRequest::with(['farm', 'farmer', 'fulfilledRecord.prescription'])
             ->where('assigned_to', $practitioner->id)
             ->latest()
             ->get()
             ->map(function (ServiceRequest $sr) {
+                $record = $sr->fulfilledRecord;
+                $prescription = $record?->prescription;
+
                 return [
                     'id' => $sr->id,
                     'type' => $sr->type,
@@ -124,6 +137,10 @@ class PractitionerController extends ApiController
                     'description' => $sr->description,
                     'rating' => $sr->rating,
                     'feedback_note' => $sr->feedback_note,
+                    'prescription_id' => $prescription?->id,
+                    'prescription_pdf_url' => $prescription?->pdf_url,
+                    'fulfilled_record_id' => $sr->fulfilled_record_id,
+                    'fulfilled_record_type' => $sr->fulfilled_record_type,
                     'farm' => $sr->farm ? [
                         'id' => $sr->farm->id,
                         'farm_name' => $sr->farm->farm_name,

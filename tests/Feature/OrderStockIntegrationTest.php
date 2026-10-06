@@ -164,4 +164,47 @@ class OrderStockIntegrationTest extends TestCase
         ])->assertStatus(200);
         $this->assertEquals(15, $product->fresh()->stock);
     }
+
+    public function test_marking_an_order_as_returned_restores_stock(): void
+    {
+        $admin = User::factory()->create();
+        $admin->syncRoles(['admin']);
+
+        $farmer = User::factory()->create();
+        $farmer->syncRoles(['farmer']);
+
+        $product = Product::factory()->create([
+            'stock' => 10,
+            'price' => 250,
+            'is_active' => true,
+        ]);
+
+        // Place order for 4 items
+        $orderResponse = $this->actingAs($farmer, 'sanctum')->postJson('/api/v1/orders', [
+            'items' => [
+                ['product_id' => $product->id, 'quantity' => 4],
+            ],
+        ]);
+
+        $orderResponse->assertStatus(201);
+        $orderId = $orderResponse->json('data.id');
+        $this->assertEquals(6, $product->fresh()->stock);
+
+        // Move to delivered first
+        $this->actingAs($admin, 'sanctum')->patchJson("/api/v1/admin/orders/{$orderId}/status", [
+            'status' => 'delivered',
+        ])->assertStatus(200);
+
+        // Admin marks as returned
+        $returnResponse = $this->actingAs($admin, 'sanctum')->patchJson("/api/v1/admin/orders/{$orderId}/status", [
+            'status' => 'returned',
+        ]);
+
+        $returnResponse->assertStatus(200)
+            ->assertJsonPath('data.status', 'returned');
+
+        // Stock must be restored to 10
+        $this->assertEquals(10, $product->fresh()->stock);
+    }
 }
+

@@ -167,7 +167,9 @@ class AdminPosAndInvoiceTest extends TestCase
             ->assertJsonPath('data.channel', 'admin_pos')
             ->assertJsonPath('data.payment_mode', 'cash')
             ->assertJsonPath('data.farm_id', $this->farm1->id) // Auto-assigned sole farm
-            ->assertJsonPath('data.total', fn ($v) => (float) $v === 1350.0); // 3 * 450
+            ->assertJsonPath('data.subtotal', fn ($v) => (float) $v === 1350.0) // 3 * 450
+            ->assertJsonPath('data.delivery_fee', fn ($v) => (float) $v === 50.0)
+            ->assertJsonPath('data.total', fn ($v) => (float) $v === 1400.0); // 1350 + 50
 
         $orderId = $response->json('data.id');
         $this->assertNotNull($response->json('data.invoice_number'));
@@ -180,7 +182,7 @@ class AdminPosAndInvoiceTest extends TestCase
         $log = ActivityLog::where('action', 'order.pos_sale')->where('subject_id', $orderId)->first();
         $this->assertNotNull($log);
         $this->assertEquals($this->admin->id, $log->user_id);
-        $this->assertEquals(1350.0, $log->changes['total']);
+        $this->assertEquals(1400.0, $log->changes['total']);
     }
 
     public function test_deo_can_execute_pos_sale(): void
@@ -193,15 +195,44 @@ class AdminPosAndInvoiceTest extends TestCase
                     'quantity' => 2,
                 ],
             ],
-            'payment_mode' => 'farmer_credit',
+            'payment_mode' => 'cod',
         ];
 
         $response = $this->actingAs($this->deo)->postJson('/api/v1/admin/pos/sale', $payload);
 
         $response->assertStatus(201)
             ->assertJsonPath('data.channel', 'admin_pos')
-            ->assertJsonPath('data.payment_mode', 'farmer_credit')
-            ->assertJsonPath('data.total', fn ($v) => (float) $v === 500.0); // 2 * 250
+            ->assertJsonPath('data.payment_mode', 'cod')
+            ->assertJsonPath('data.subtotal', fn ($v) => (float) $v === 500.0) // 2 * 250
+            ->assertJsonPath('data.delivery_fee', fn ($v) => (float) $v === 50.0)
+            ->assertJsonPath('data.total', fn ($v) => (float) $v === 550.0); // 500 + 50
+    }
+
+    public function test_pos_sale_with_over_the_counter_fulfillment_marks_delivered_with_zero_delivery_fee(): void
+    {
+        $payload = [
+            'user_id' => $this->farmer->id,
+            'items' => [
+                [
+                    'product_id' => $this->productA->id,
+                    'quantity' => 1,
+                ],
+            ],
+            'payment_mode' => 'cash',
+            'fulfillment_type' => 'over_the_counter',
+            'notes' => 'Direct counter handover at cash desk',
+        ];
+
+        $response = $this->actingAs($this->admin)->postJson('/api/v1/admin/pos/sale', $payload);
+
+        $response->assertStatus(201)
+            ->assertJsonPath('data.status', 'delivered')
+            ->assertJsonPath('data.payment_status', 'paid')
+            ->assertJsonPath('data.delivery_fee', 0)
+            ->assertJsonPath('data.delivery_address', 'Over-the-counter Depot Handover');
+
+        $this->farmer->refresh();
+        $this->assertEquals(1, $this->farmer->delivered_orders_count);
     }
 
     public function test_pos_sale_rejects_insufficient_stock(): void
@@ -250,5 +281,37 @@ class AdminPosAndInvoiceTest extends TestCase
         $successRes = $this->actingAs($this->admin)->postJson('/api/v1/admin/pos/sale', $payload);
         $successRes->assertStatus(201)
             ->assertJsonPath('data.farm_id', $this->farm2->id);
+    }
+
+    public function test_pos_sale_allows_deliver_to_farm_with_custom_address_when_farmer_has_no_farm(): void
+    {
+        $farmlessFarmer = User::factory()->create([
+            'phone_verified_at' => now(),
+            'district' => 'Jashore',
+        ]);
+        $farmlessFarmer->assignRole('farmer');
+
+        $payload = [
+            'user_id' => $farmlessFarmer->id,
+            'items' => [
+                [
+                    'product_id' => $this->productA->id,
+                    'quantity' => 2, // 2 * 500 = 1000
+                ],
+            ],
+            'payment_mode' => 'cash',
+            'fulfillment_type' => 'deliver_to_farm',
+            'delivery_address' => 'Pond Ghona #4, Keshabpur, Jashore',
+            'delivery_fee' => 70.00,
+        ];
+
+        $response = $this->actingAs($this->admin)->postJson('/api/v1/admin/pos/sale', $payload);
+
+        $response->assertStatus(201)
+            ->assertJsonPath('data.status', 'confirmed')
+            ->assertJsonPath('data.payment_status', 'paid')
+            ->assertJsonPath('data.delivery_fee', fn ($v) => (float) $v === 70.0)
+            ->assertJsonPath('data.delivery_address', 'Pond Ghona #4, Keshabpur, Jashore')
+            ->assertJsonPath('data.total', fn ($v) => (float) $v === 1070.0);
     }
 }

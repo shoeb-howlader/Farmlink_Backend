@@ -226,4 +226,48 @@ class PhoneVerificationTest extends TestCase
 
         $response->assertStatus(201);
     }
+
+    public function test_registration_rejects_invalid_phone_formats(): void
+    {
+        // 10 digits
+        $res1 = $this->postJson('/api/v1/register', [
+            'name' => 'Invalid Phone 1',
+            'phone' => '0171234567',
+            'gender' => 'male',
+        ]);
+        $res1->assertStatus(422)
+            ->assertJsonValidationErrors(['phone']);
+
+        // 12 digits
+        $res2 = $this->postJson('/api/v1/register', [
+            'name' => 'Invalid Phone 2',
+            'phone' => '017123456789',
+            'gender' => 'male',
+        ]);
+        $res2->assertStatus(422)
+            ->assertJsonValidationErrors(['phone']);
+
+        // Invalid operator prefix
+        $res3 = $this->postJson('/api/v1/register', [
+            'name' => 'Invalid Phone 3',
+            'phone' => '01212345678',
+            'gender' => 'male',
+        ]);
+        $res3->assertStatus(422)
+            ->assertJsonValidationErrors(['phone']);
+    }
+
+    public function test_registration_normalizes_and_accepts_valid_bangladeshi_numbers(): void
+    {
+        $response = $this->postJson('/api/v1/register', [
+            'name' => 'Normalized Phone Farmer',
+            'phone' => '+8801912345678',
+            'gender' => 'male',
+            'district' => 'Khulna',
+        ]);
+
+        $response->assertStatus(201);
+        $user = User::where('phone', '01912345678')->first();
+        $this->assertNotNull($user);
+    }
 }

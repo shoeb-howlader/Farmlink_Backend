@@ -14,6 +14,7 @@ class ServiceRequest extends Model
 
     public const SLA_URGENT_PENDING_HOURS = 24;
     public const SLA_NORMAL_PENDING_HOURS = 72;
+    public const RECENT_COMPLETED_HOURS = 48;
 
     protected $fillable = [
         'farm_id',
@@ -84,6 +85,44 @@ class ServiceRequest extends Model
     public function scopeOpen(Builder $query): Builder
     {
         return $query->whereIn('status', ['pending', 'assigned', 'in_progress']);
+    }
+
+    /**
+     * Scope query to completed service requests within the recent time-box window.
+     */
+    public function scopeRecentlyCompleted(Builder $query, int $hours = self::RECENT_COMPLETED_HOURS): Builder
+    {
+        $cutoff = now()->subHours($hours);
+        return $query->where('status', 'completed')
+            ->where(function (Builder $q) use ($cutoff) {
+                $q->where('completed_at', '>=', $cutoff)
+                  ->orWhere(function (Builder $sub) use ($cutoff) {
+                      $sub->whereNull('completed_at')
+                          ->where('updated_at', '>=', $cutoff);
+                  });
+            });
+    }
+
+    /**
+     * Scope query to requests visible on the active assigned queue.
+     * Includes all non-completed requests, plus only recently completed requests within the time-box window.
+     */
+    public function scopeAssignedQueueVisible(Builder $query, int $hours = self::RECENT_COMPLETED_HOURS): Builder
+    {
+        $cutoff = now()->subHours($hours);
+        return $query->where(function (Builder $q) use ($cutoff) {
+            $q->where('status', '!=', 'completed')
+              ->orWhere(function (Builder $sub) use ($cutoff) {
+                  $sub->where('status', 'completed')
+                      ->where(function (Builder $comp) use ($cutoff) {
+                          $comp->where('completed_at', '>=', $cutoff)
+                               ->orWhere(function (Builder $fb) use ($cutoff) {
+                                   $fb->whereNull('completed_at')
+                                      ->where('updated_at', '>=', $cutoff);
+                               });
+                      });
+              });
+        });
     }
 
     /**

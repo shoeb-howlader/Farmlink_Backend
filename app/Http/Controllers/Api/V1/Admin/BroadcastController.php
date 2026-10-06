@@ -117,33 +117,13 @@ class BroadcastController extends ApiController
                 'created_by' => $request->user()->id,
             ]);
 
-            // Fan out individual notification rows
-            $now = now();
-            $notificationRows = [];
-            foreach ($recipientIds as $userId) {
-                $notificationRows[] = [
-                    'user_id' => $userId,
-                    'broadcast_id' => $broadcast->id,
-                    'type' => 'broadcast',
-                    'title' => $broadcast->title,
-                    'message' => $broadcast->message,
-                    'data' => json_encode([
-                        'broadcast_id' => $broadcast->id,
-                        'sender_id' => $request->user()->id,
-                        'sender_name' => $request->user()->name,
-                        'target_audience' => $broadcast->target_audience,
-                    ]),
-                    'read_at' => null,
-                    'created_at' => $now,
-                ];
-            }
-
-            if (! empty($notificationRows)) {
-                // Insert in batches of 500
-                foreach (array_chunk($notificationRows, 500) as $chunk) {
-                    AdminNotification::insert($chunk);
-                }
-            }
+            // Offload recipient fan-out to asynchronous queued job
+            \App\Jobs\FanOutBroadcastNotificationsJob::dispatch(
+                $broadcast,
+                $recipientIds->all(),
+                $request->user()->id,
+                $request->user()->name
+            );
 
             ActivityLog::log(
                 'broadcast.sent',

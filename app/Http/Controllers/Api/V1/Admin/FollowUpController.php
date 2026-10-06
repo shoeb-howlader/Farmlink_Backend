@@ -56,12 +56,30 @@ class FollowUpController extends ApiController
                         });
                 });
             })
-            ->with('user')
-            ->get();
+            ->with([
+                'user',
+                'division',
+                'districtModel',
+                'upazilaModel',
+                'unionModel',
+                'pourashava',
+                'images',
+            ])
+            ->latest('id');
 
-        return $this->successResponse(
-            FarmResource::collection($farms),
-            'Overdue follow-up farms retrieved successfully'
-        );
+        $perPage = max(1, min((int) $request->query('per_page', 15), 100));
+        $paginated = $farms->paginate($perPage);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Overdue follow-up farms retrieved successfully',
+            'data' => FarmResource::collection($paginated->items()),
+            'meta' => [
+                'current_page' => $paginated->currentPage(),
+                'last_page' => $paginated->lastPage(),
+                'per_page' => $paginated->perPage(),
+                'total' => $paginated->total(),
+            ],
+        ]);
     }
 }

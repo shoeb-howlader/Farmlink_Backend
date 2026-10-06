@@ -70,6 +70,9 @@ class ProcessFollowUpsCommand extends Command
             $diagnosisSnippet = Str::limit($rec->findings ?: 'Veterinary diagnosis', 100);
             $description = "Automated follow-up visit for veterinary treatment on {$rec->visit_date->format('d M Y')}. Diagnosis: {$diagnosisSnippet}. (Ref #VR-{$rec->id})";
 
+            $isRescheduled = ! empty($rec->original_follow_up_date) || ! empty($rec->rescheduled_at);
+            $channel = $isRescheduled ? 'follow_up_rescheduled' : 'system_generated';
+
             $sr = ServiceRequest::create([
                 'farm_id' => $rec->farm_id,
                 'farmer_id' => $rec->farm->user_id,
@@ -77,7 +80,7 @@ class ProcessFollowUpsCommand extends Command
                 'description' => $description,
                 'urgency' => 'normal',
                 'status' => 'pending',
-                'source_channel' => 'system_generated',
+                'source_channel' => $channel,
                 'parent_record_type' => VetRecord::class,
                 'parent_record_id' => $rec->id,
             ]);
@@ -89,6 +92,7 @@ class ProcessFollowUpsCommand extends Command
                 'origin_record_id' => $rec->id,
                 'origin_record_type' => 'vet',
                 'scheduled_for' => $rec->next_follow_up->toDateString(),
+                'is_rescheduled' => $isRescheduled,
             ]);
         }
 
@@ -119,6 +123,9 @@ class ProcessFollowUpsCommand extends Command
             $recSnippet = Str::limit($rec->recommendation ?: 'Consultation advice', 100);
             $description = "Automated follow-up visit for aquaculture advisory on {$rec->visit_date->format('d M Y')}. Advisory: {$recSnippet}. (Ref #CR-{$rec->id})";
 
+            $isRescheduled = ! empty($rec->original_follow_up_date) || ! empty($rec->rescheduled_at);
+            $channel = $isRescheduled ? 'follow_up_rescheduled' : 'system_generated';
+
             $sr = ServiceRequest::create([
                 'farm_id' => $rec->farm_id,
                 'farmer_id' => $rec->farm->user_id,
@@ -126,7 +133,7 @@ class ProcessFollowUpsCommand extends Command
                 'description' => $description,
                 'urgency' => 'normal',
                 'status' => 'pending',
-                'source_channel' => 'system_generated',
+                'source_channel' => $channel,
                 'parent_record_type' => ConsultantRecord::class,
                 'parent_record_id' => $rec->id,
             ]);
@@ -138,6 +145,7 @@ class ProcessFollowUpsCommand extends Command
                 'origin_record_id' => $rec->id,
                 'origin_record_type' => 'consultant',
                 'scheduled_for' => $rec->next_follow_up->toDateString(),
+                'is_rescheduled' => $isRescheduled,
             ]);
         }
 

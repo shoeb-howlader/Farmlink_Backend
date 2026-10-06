@@ -10,6 +10,8 @@ use Illuminate\Http\Request;
 
 class ServiceRequestController extends ApiController
 {
+    public const RECENT_COMPLETED_HOURS = ServiceRequest::RECENT_COMPLETED_HOURS;
+
     /**
      * Display service requests assigned to the authenticated practitioner.
      */
@@ -22,8 +24,8 @@ class ServiceRequestController extends ApiController
         $counts = [
             'pending' => (clone $baseQuery)->whereIn('status', ['assigned', 'in_progress', 'pending'])->count(),
             'urgent_pending' => (clone $baseQuery)->whereIn('status', ['assigned', 'in_progress', 'pending'])->where('urgency', 'urgent')->count(),
-            'completed' => (clone $baseQuery)->where('status', 'completed')->count(),
-            'all' => (clone $baseQuery)->count(),
+            'completed' => (clone $baseQuery)->recentlyCompleted(self::RECENT_COMPLETED_HOURS)->count(),
+            'all' => (clone $baseQuery)->assignedQueueVisible(self::RECENT_COMPLETED_HOURS)->count(),
         ];
 
         $query = ServiceRequest::with(['farm', 'farmer', 'fulfilledRecord.photos', 'parentRecord'])
@@ -34,9 +36,15 @@ class ServiceRequestController extends ApiController
             $status = $request->query('status');
             if ($status === 'pending' || $status === 'assigned') {
                 $query->whereIn('status', ['assigned', 'in_progress', 'pending']);
-            } elseif ($status !== 'all') {
+            } elseif ($status === 'completed') {
+                $query->recentlyCompleted(self::RECENT_COMPLETED_HOURS);
+            } elseif ($status === 'all') {
+                $query->assignedQueueVisible(self::RECENT_COMPLETED_HOURS);
+            } else {
                 $query->where('status', $status);
             }
+        } else {
+            $query->assignedQueueVisible(self::RECENT_COMPLETED_HOURS);
         }
 
         if ($request->filled('urgency')) {

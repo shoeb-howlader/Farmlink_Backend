@@ -16,6 +16,15 @@ class Prescription extends Model
         'consultant_record_id',
     ];
 
+    protected $appends = [
+        'pdf_url',
+    ];
+
+    public function getPdfUrlAttribute(): string
+    {
+        return url("/api/v1/prescriptions/{$this->id}/pdf");
+    }
+
     public function vetRecord(): BelongsTo
     {
         return $this->belongsTo(VetRecord::class);

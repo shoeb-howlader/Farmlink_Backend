@@ -65,30 +65,6 @@ class UserFactory extends Factory
     }
 
     /**
-     * Indicate that the farmer is pending admin approval.
-     */
-    public function pendingApproval(): static
-    {
-        return $this->state(fn (array $attributes) => [
-            'phone_verified_at' => now(),
-            'status' => 'pending_approval',
-        ]);
-    }
-
-    /**
-     * Indicate that the farmer is rejected.
-     */
-    public function rejected(string $reason = 'Incomplete farm documents'): static
-    {
-        return $this->state(fn (array $attributes) => [
-            'phone_verified_at' => now(),
-            'status' => 'rejected',
-            'rejection_reason' => $reason,
-            'rejected_at' => now(),
-        ]);
-    }
-
-    /**
      * Assign a Spatie role to the created user.
      */
     public function withRole(string $role): static

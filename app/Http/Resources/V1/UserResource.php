@@ -33,13 +33,22 @@ class UserResource extends JsonResource
             'is_active' => (bool) ($this->is_active ?? true),
             'status' => $this->status ?? 'active',
             'rejection_reason' => $this->rejection_reason,
+            'cod_blocked' => (bool) ($this->cod_blocked ?? false),
+            'consultations_blocked' => (bool) ($this->consultations_blocked ?? false),
+            'is_blacklisted' => (bool) ($this->is_blacklisted ?? false),
+            'delivered_orders_count' => (int) ($this->delivered_orders_count ?? 0),
+            'refused_cod_orders_count' => (int) ($this->refused_cod_orders_count ?? 0),
             'approved_at' => $this->approved_at?->toISOString(),
             'rejected_at' => $this->rejected_at?->toISOString(),
             'avatar_url' => $this->profile_image_path ? \Illuminate\Support\Facades\Storage::disk('public')->url($this->profile_image_path) : $this->avatar_url,
             'avatar_thumbnail_url' => $this->profile_image_thumbnail_path ? \Illuminate\Support\Facades\Storage::disk('public')->url($this->profile_image_thumbnail_path) : ($this->profile_image_path ? \Illuminate\Support\Facades\Storage::disk('public')->url($this->profile_image_path) : $this->avatar_url),
             'last_login_at' => $this->last_login_at?->toISOString(),
-            'permissions' => $this->getAllPermissions()->pluck('name'),
-            'abilities' => $this->getAllPermissions()->pluck('name'),
+            'permissions' => ($this->relationLoaded('permissions') || ($request->user()?->id === $this->id))
+                ? $this->getAllPermissions()->pluck('name')
+                : collect(),
+            'abilities' => ($this->relationLoaded('permissions') || ($request->user()?->id === $this->id))
+                ? $this->getAllPermissions()->pluck('name')
+                : collect(),
             'farms' => FarmResource::collection($this->whenLoaded('farms')),
             'created_at' => $this->created_at?->toISOString(),
             'updated_at' => $this->updated_at?->toISOString(),

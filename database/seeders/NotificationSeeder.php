@@ -36,9 +36,9 @@ class NotificationSeeder extends Seeder
             ],
             [
                 'user_id' => null,
-                'type' => 'farmer.pending_approval',
-                'title' => 'New Farmer Awaiting Approval',
-                'message' => 'New farmer awaiting approval: Hasanuzzaman Molla, 01987654321, Satkhira',
+                'type' => 'farmer',
+                'title' => 'New Farmer Registered',
+                'message' => 'Farmer Hasanuzzaman Molla (01987654321) registered in Satkhira.',
                 'data' => ['farmer_id' => 2, 'phone' => '01987654321', 'district' => 'Satkhira'],
                 'read_at' => null,
                 'created_at' => now()->subHours(4),

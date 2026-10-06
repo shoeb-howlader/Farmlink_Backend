@@ -43,26 +43,32 @@ class PrescriptionController extends ApiController
         $practitioner = $isVet ? $prescription->vetRecord->vet : $prescription->consultantRecord->consultant;
         $testResults = $record->testResults ?? collect();
 
-        $pdf = Pdf::loadView('reports.visit_report', [
-            'prescription' => $prescription,
-            'prescriptionItems' => $prescription->items,
-            'testResults' => $testResults,
-            'record' => $record,
-            'farm' => $farm,
-            'farmer' => $farmer,
-            'practitioner' => $practitioner,
-            'isVet' => $isVet,
-            'serviceRequest' => null,
-        ]);
-
-        $pdf->setPaper('a4', 'portrait');
-
         $filename = "Visit-Report-{$prescription->id}.pdf";
+        $disposition = $request->boolean('download') ? 'attachment' : 'inline';
 
-        if ($request->boolean('download')) {
-            return $pdf->download($filename);
-        }
+        $cacheKey = "prescription_pdf_{$prescription->id}_" . ($prescription->updated_at ? $prescription->updated_at->timestamp : '0');
+        $pdfOutput = \Illuminate\Support\Facades\Cache::remember($cacheKey, 86400, function () use ($prescription, $record, $farm, $farmer, $practitioner, $isVet, $testResults) {
+            $pdf = Pdf::loadView('reports.visit_report', [
+                'prescription' => $prescription,
+                'prescriptionItems' => $prescription->items,
+                'testResults' => $testResults,
+                'record' => $record,
+                'farm' => $farm,
+                'farmer' => $farmer,
+                'practitioner' => $practitioner,
+                'isVet' => $isVet,
+                'serviceRequest' => null,
+            ]);
 
-        return $pdf->stream($filename);
+            $pdf->setPaper('a4', 'portrait');
+
+            return $pdf->output();
+        });
+
+        return response($pdfOutput, 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => "{$disposition}; filename=\"{$filename}\"",
+            'Cache-Control' => 'private, max-age=3600',
+        ]);
     }
 }

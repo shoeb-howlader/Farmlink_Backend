@@ -51,35 +51,33 @@ class OtpController extends ApiController
             ]);
         }
 
-        // Mark verified, update status to pending_approval for farmers, and clear OTP
-        $newStatus = $user->hasRole('farmer') ? 'pending_approval' : 'active';
+        // Mark verified, immediately set status to active, and clear OTP
         $user->update([
             'phone_verified_at' => now(),
-            'status' => $newStatus,
+            'status' => 'active',
             'phone_otp' => null,
             'phone_otp_expires_at' => null,
         ]);
 
         if ($user->hasRole('farmer')) {
-            \App\Models\AdminNotification::notify(
-                'farmer.pending_approval',
-                'New Farmer Awaiting Approval',
-                "New farmer awaiting approval: {$user->name}, {$user->phone}, " . ($user->district ?? 'N/A'),
+            \App\Models\ActivityLog::log(
+                'farmer.registered',
+                $user,
                 [
-                    'farmer_id' => $user->id,
                     'name' => $user->name,
                     'phone' => $user->phone,
                     'district' => $user->district,
+                    'verified_via' => 'otp',
                 ],
-                null
+                $user->id
             );
         }
 
         return $this->successResponse([
             'user' => new UserResource($user->fresh()),
             'verified' => true,
-            'status' => $newStatus,
-        ], 'Phone number verified successfully. Account is awaiting administrator approval.');
+            'status' => 'active',
+        ], 'Phone number verified successfully.');
     }
 
     /**

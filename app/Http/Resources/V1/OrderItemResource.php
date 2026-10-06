@@ -19,9 +19,14 @@ class OrderItemResource extends JsonResource
     public function toArray(Request $request): array
     {
         $price = (float) ($this->price_at_purchase ?? $this->price);
-        $review = \App\Models\ProductReview::where('order_id', $this->order_id)
-            ->where('product_id', $this->product_id)
-            ->first();
+        $review = null;
+        if ($request->routeIs('*orders.show') || $this->relationLoaded('review')) {
+            $review = $this->relationLoaded('review')
+                ? $this->review
+                : \App\Models\ProductReview::where('order_id', $this->order_id)
+                    ->where('product_id', $this->product_id)
+                    ->first();
+        }
 
         return [
             'id' => $this->id,
@@ -29,9 +34,10 @@ class OrderItemResource extends JsonResource
             'product_id' => $this->product_id,
             'product_variant_id' => $this->product_variant_id,
             'product' => new ProductResource($this->whenLoaded('product')),
-            'variant' => $this->variant ? new ProductVariantResource($this->variant) : null,
-            'variant_label' => $this->variant?->variant_label,
+            'variant' => ($this->relationLoaded('variant') && $this->variant) ? new ProductVariantResource($this->variant) : null,
+            'variant_label' => $this->relationLoaded('variant') ? $this->variant?->variant_label : null,
             'quantity' => (int) $this->quantity,
+            'price' => $price,
             'price_at_purchase' => $price,
             'total' => round($price * $this->quantity, 2),
             'has_reviewed' => $review !== null,

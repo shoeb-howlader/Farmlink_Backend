@@ -37,7 +37,19 @@ class PosController extends ApiController
             'items.*.product_variant_id' => ['nullable', 'integer', 'exists:product_variants,id'],
             'items.*.quantity' => ['required', 'integer', 'min:1'],
             'items.*.price_at_purchase' => ['nullable', 'numeric', 'min:0'],
-            'payment_mode' => ['nullable', 'string', 'in:cash,cod,farmer_credit'],
+            'payment_mode' => ['nullable', 'string', 'in:cash,cod'],
+            'fulfillment_type' => ['nullable', 'string', 'in:over_the_counter,deliver_to_farm'],
+            'delivery_address' => ['nullable', 'string', 'max:500'],
+            'delivery_fee' => ['nullable', 'numeric', 'min:0'],
+            'recipient_name' => ['nullable', 'string', 'max:100'],
+            'recipient_phone' => ['nullable', 'string', 'max:20'],
+            'division_id' => ['nullable', 'integer', 'exists:divisions,id'],
+            'district_id' => ['nullable', 'integer', 'exists:districts,id'],
+            'upazila_id' => ['nullable', 'integer', 'exists:upazilas,id'],
+            'union_id' => ['nullable', 'integer', 'exists:unions,id'],
+            'district' => ['nullable', 'string', 'max:100'],
+            'upazila' => ['nullable', 'string', 'max:100'],
+            'union' => ['nullable', 'string', 'max:100'],
             'notes' => ['nullable', 'string', 'max:1000'],
         ]);
 
@@ -46,6 +58,18 @@ class PosController extends ApiController
         if (! $farmer->hasRole('farmer')) {
             throw ValidationException::withMessages([
                 'user_id' => ['The selected customer is not registered as a farmer.'],
+            ]);
+        }
+
+        if ($farmer->cod_blocked && ($validated['payment_mode'] ?? 'cash') === 'cod') {
+            throw ValidationException::withMessages([
+                'payment_mode' => ['Cash on Delivery is blocked for this customer due to past doorstep delivery returns. Please collect cash at counter.'],
+            ]);
+        }
+
+        if ($farmer->is_blacklisted && ($validated['payment_mode'] ?? 'cash') === 'cod') {
+            throw ValidationException::withMessages([
+                'payment_mode' => ['This customer is blacklisted (' . ($farmer->blacklist_reason ?: 'fraud risk') . '). Cash on delivery consignments are prohibited.'],
             ]);
         }
 
@@ -70,10 +94,12 @@ class PosController extends ApiController
         }
 
         $paymentMode = $validated['payment_mode'] ?? 'cash';
+        $fulfillmentType = $validated['fulfillment_type'] ?? 'deliver_to_farm';
+        $isOverTheCounter = $fulfillmentType === 'over_the_counter';
 
         // Execute Transaction: stock decrement, order creation, item creation, audit log
-        $order = DB::transaction(function () use ($staff, $farmer, $farmId, $validated, $paymentMode) {
-            $total = 0;
+        $order = DB::transaction(function () use ($staff, $farmer, $farmId, $validated, $paymentMode, $fulfillmentType, $isOverTheCounter) {
+            $subtotal = 0;
             $itemsData = [];
 
             foreach ($validated['items'] as $item) {
@@ -113,7 +139,7 @@ class PosController extends ApiController
                     : (float) ($variant ? $variant->price : $product->price);
 
                 $lineTotal = $unitPrice * $qty;
-                $total += $lineTotal;
+                $subtotal += $lineTotal;
 
                 $itemsData[] = [
                     'product_id' => $product->id,
@@ -123,18 +149,77 @@ class PosController extends ApiController
                 ];
             }
 
+            $farm = $farmId ? Farm::find($farmId) : null;
+            if ($isOverTheCounter) {
+                $deliveryFee = 0.00;
+                $deliveryAddress = 'Over-the-counter Depot Handover';
+            } else {
+                $deliveryFee = isset($validated['delivery_fee']) && $validated['delivery_fee'] !== null
+                    ? (float) $validated['delivery_fee']
+                    : app(\App\Services\DeliveryFeeService::class)->computeDeliveryFee($subtotal, $farm?->district_id ?? null);
+
+                $deliveryAddress = ! empty($validated['delivery_address'])
+                    ? $validated['delivery_address']
+                    : ($farm ? "{$farm->farm_name}, {$farm->district}" : ($farmer->district ? "{$farmer->district} District" : 'Direct Farm Delivery'));
+            }
+
+            $total = round($subtotal + $deliveryFee, 2);
+            $orderStatus = $isOverTheCounter ? 'delivered' : 'confirmed';
+
+            $recipientName = $validated['recipient_name'] ?? $farmer->name;
+            $recipientPhone = $validated['recipient_phone'] ?? $farmer->phone;
+            $divisionId = $validated['division_id'] ?? $farm?->division_id;
+            $districtId = $validated['district_id'] ?? $farm?->district_id;
+            $upazilaId = $validated['upazila_id'] ?? $farm?->upazila_id;
+            $unionId = $validated['union_id'] ?? $farm?->union_id;
+            $district = $validated['district'] ?? ($farm?->district ?: $farmer->district);
+            $upazila = $validated['upazila'] ?? $farm?->upazila;
+            $union = $validated['union'] ?? $farm?->union;
+
             // Create Order tagged as admin_pos
             $order = Order::create([
                 'user_id' => $farmer->id,
                 'farm_id' => $farmId,
-                'status' => 'confirmed',
+                'recipient_name' => $recipientName,
+                'recipient_phone' => $recipientPhone,
+                'division_id' => $divisionId,
+                'district_id' => $districtId,
+                'upazila_id' => $upazilaId,
+                'union_id' => $unionId,
+                'district' => $district,
+                'upazila' => $upazila,
+                'union' => $union,
+                'status' => $orderStatus,
+                'payment_status' => $paymentMode === 'cash' ? 'paid' : 'pending',
                 'channel' => 'admin_pos',
                 'payment_mode' => $paymentMode,
+                'delivery_address' => $deliveryAddress,
                 'notes' => $validated['notes'] ?? null,
+                'subtotal' => $subtotal,
+                'delivery_fee' => $deliveryFee,
+                'discount_amount' => 0.00,
+                'coupon_id' => null,
                 'total' => $total,
             ]);
 
             $order->items()->createMany($itemsData);
+
+            \App\Models\Payment::create([
+                'order_id' => $order->id,
+                'user_id' => $order->user_id,
+                'method' => $paymentMode,
+                'amount' => $total,
+                'status' => $paymentMode === 'cash' ? 'success' : 'pending',
+                'paid_at' => $paymentMode === 'cash' ? now() : null,
+            ]);
+
+            if ($order->farm_id) {
+                \App\Models\FarmLedgerEntry::recordOrderExpense($order);
+            }
+
+            if ($orderStatus === 'delivered') {
+                $farmer->increment('delivered_orders_count');
+            }
 
             return $order;
         });
@@ -153,6 +238,8 @@ class PosController extends ApiController
                 'total' => (float) $order->total,
                 'invoice_number' => $order->invoice_number,
                 'payment_mode' => $order->payment_mode,
+                'fulfillment_type' => $fulfillmentType,
+                'order_status' => $order->status,
                 'item_count' => count($validated['items']),
             ],
             $staff

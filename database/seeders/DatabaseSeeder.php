@@ -110,7 +110,7 @@ class DatabaseSeeder extends Seeder
             ]
         );
 
-        // 7b. Pending Approval Farmer User (Self-Registered, Verified Phone, Awaiting Admin Approval)
+        // 7b. Self-Registered Farmer User (Verified Phone, Active)
         $pendingFarmer = User::firstOrCreate(
             ['email' => 'hasanuzzaman@farmlink.com'],
             [
@@ -118,7 +118,7 @@ class DatabaseSeeder extends Seeder
                 'phone' => '01987654321',
                 'district' => 'Satkhira',
                 'gender' => 'male',
-                'status' => 'pending_approval',
+                'status' => 'active',
                 'phone_verified_at' => now()->subHours(4),
                 'password' => Hash::make('password'),
             ]
@@ -235,16 +235,48 @@ class DatabaseSeeder extends Seeder
                 'district' => $farmer->district,
             ]);
 
-            // Add vet & consultant records to each farm
+            // Add vet & consultant records to each farm and create matching completed ServiceRequests
             foreach ($farms as $farm) {
-                VetRecord::factory()->create([
+                $vr = VetRecord::factory()->create([
                     'farm_id' => $farm->id,
                     'vet_id' => $vet->id,
                 ]);
 
-                ConsultantRecord::factory()->create([
+                \App\Models\ServiceRequest::create([
+                    'farm_id' => $farm->id,
+                    'farmer_id' => $farmer->id,
+                    'type' => 'vet',
+                    'description' => $vr->findings ?: 'Veterinary clinical examination and pond treatment protocol.',
+                    'urgency' => 'normal',
+                    'status' => 'completed',
+                    'source_channel' => 'self_service',
+                    'assigned_to' => $vet->id,
+                    'assigned_at' => $vr->visit_date ? \Carbon\Carbon::parse($vr->visit_date)->subHours(12) : now()->subDays(3),
+                    'completed_at' => $vr->visit_date ? \Carbon\Carbon::parse($vr->visit_date) : now()->subDays(2),
+                    'fulfilled_record_type' => VetRecord::class,
+                    'fulfilled_record_id' => $vr->id,
+                    'created_at' => $vr->visit_date ? \Carbon\Carbon::parse($vr->visit_date)->subDays(1) : now()->subDays(4),
+                ]);
+
+                $cr = ConsultantRecord::factory()->create([
                     'farm_id' => $farm->id,
                     'consultant_id' => $consultant->id,
+                ]);
+
+                \App\Models\ServiceRequest::create([
+                    'farm_id' => $farm->id,
+                    'farmer_id' => $farmer->id,
+                    'type' => 'consultant',
+                    'description' => $cr->recommendation ?: 'Aquaculture pond management and biosecurity advisory consultation.',
+                    'urgency' => 'normal',
+                    'status' => 'completed',
+                    'source_channel' => 'self_service',
+                    'assigned_to' => $consultant->id,
+                    'assigned_at' => $cr->visit_date ? \Carbon\Carbon::parse($cr->visit_date)->subHours(12) : now()->subDays(3),
+                    'completed_at' => $cr->visit_date ? \Carbon\Carbon::parse($cr->visit_date) : now()->subDays(2),
+                    'fulfilled_record_type' => ConsultantRecord::class,
+                    'fulfilled_record_id' => $cr->id,
+                    'created_at' => $cr->visit_date ? \Carbon\Carbon::parse($cr->visit_date)->subDays(1) : now()->subDays(4),
                 ]);
             }
 
@@ -278,5 +310,10 @@ class DatabaseSeeder extends Seeder
 
         // 9. Seed Product Reviews & Delivered Orders
         $this->call(ProductReviewSeeder::class);
+
+        // 10. Geocode data & Pourashavas
+        $this->call(BengaliGeocodeSeeder::class);
+        $this->call(PourashavaSeeder::class);
     }
 }
+

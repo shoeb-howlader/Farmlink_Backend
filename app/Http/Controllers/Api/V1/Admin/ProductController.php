@@ -26,7 +26,10 @@ class ProductController extends ApiController
     {
         Gate::authorize('viewAdmin', \App\Models\Order::class);
 
-        $query = Product::query()->with(['variants', 'images', 'specs', 'documents']);
+        $query = Product::query()
+            ->with(['variants', 'images', 'specs', 'documents'])
+            ->withAvg('reviews', 'rating')
+            ->withCount('reviews');
 
         if ($request->filled('category') && $request->query('category') !== 'all') {
             $query->where('category', $request->query('category'));
@@ -79,7 +82,7 @@ class ProductController extends ApiController
             default => $query->latest(),
         };
 
-        $perPage = max(1, min((int) $request->query('per_page', 10), 100));
+        $perPage = max(1, min((int) $request->query('per_page', 15), 100));
         $paginated = $query->paginate($perPage);
 
         $lowStockCount = Product::where('is_active', true)->where(function ($q) {
@@ -150,6 +153,9 @@ class ProductController extends ApiController
             'variants.*.variant_label' => ['required_with:variants', 'string', 'max:100'],
             'variants.*.sku' => ['nullable', 'string', 'max:100'],
             'variants.*.price' => ['required_with:variants', 'numeric', 'min:0'],
+            'variants.*.compare_at_price' => ['nullable', 'numeric', 'min:0'],
+            'variants.*.sale_starts_at' => ['nullable', 'date'],
+            'variants.*.sale_ends_at' => ['nullable', 'date'],
             'variants.*.stock' => ['required_with:variants', 'integer', 'min:0'],
             'variants.*.low_stock_threshold' => ['nullable', 'integer', 'min:0'],
             'variants.*.is_default' => ['nullable', 'boolean'],
@@ -211,6 +217,9 @@ class ProductController extends ApiController
                     'variant_label' => $v['variant_label'],
                     'sku' => ! empty($v['sku']) ? $v['sku'] : ('PRD-' . $product->id . '-' . ($vSlug ?: ('VAR' . ($idx + 1)))),
                     'price' => $v['price'],
+                    'compare_at_price' => $v['compare_at_price'] ?? null,
+                    'sale_starts_at' => $v['sale_starts_at'] ?? null,
+                    'sale_ends_at' => $v['sale_ends_at'] ?? null,
                     'stock' => $v['stock'],
                     'low_stock_threshold' => $v['low_stock_threshold'] ?? 10,
                     'is_default' => $isDef,
@@ -270,6 +279,9 @@ class ProductController extends ApiController
             'variants.*.variant_label' => ['required_with:variants', 'string', 'max:100'],
             'variants.*.sku' => ['nullable', 'string', 'max:100'],
             'variants.*.price' => ['required_with:variants', 'numeric', 'min:0'],
+            'variants.*.compare_at_price' => ['nullable', 'numeric', 'min:0'],
+            'variants.*.sale_starts_at' => ['nullable', 'date'],
+            'variants.*.sale_ends_at' => ['nullable', 'date'],
             'variants.*.stock' => ['required_with:variants', 'integer', 'min:0'],
             'variants.*.low_stock_threshold' => ['nullable', 'integer', 'min:0'],
             'variants.*.is_default' => ['nullable', 'boolean'],
@@ -328,6 +340,9 @@ class ProductController extends ApiController
                             'variant_label' => $v['variant_label'],
                             'sku' => $v['sku'] ?? $variant->sku,
                             'price' => $v['price'],
+                            'compare_at_price' => array_key_exists('compare_at_price', $v) ? $v['compare_at_price'] : $variant->compare_at_price,
+                            'sale_starts_at' => array_key_exists('sale_starts_at', $v) ? $v['sale_starts_at'] : $variant->sale_starts_at,
+                            'sale_ends_at' => array_key_exists('sale_ends_at', $v) ? $v['sale_ends_at'] : $variant->sale_ends_at,
                             'stock' => $v['stock'],
                             'low_stock_threshold' => $v['low_stock_threshold'] ?? 10,
                             'is_default' => $isDef,
@@ -340,6 +355,9 @@ class ProductController extends ApiController
                         'variant_label' => $v['variant_label'],
                         'sku' => ! empty($v['sku']) ? $v['sku'] : ('PRD-' . $product->id . '-' . ($vSlug ?: ('VAR' . ($idx + 1)))),
                         'price' => $v['price'],
+                        'compare_at_price' => $v['compare_at_price'] ?? null,
+                        'sale_starts_at' => $v['sale_starts_at'] ?? null,
+                        'sale_ends_at' => $v['sale_ends_at'] ?? null,
                         'stock' => $v['stock'],
                         'low_stock_threshold' => $v['low_stock_threshold'] ?? 10,
                         'is_default' => $isDef,

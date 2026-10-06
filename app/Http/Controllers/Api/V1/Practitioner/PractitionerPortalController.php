@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Api\V1\Practitioner;
 
 use App\Http\Controllers\Api\V1\ApiController;
+use App\Models\ActivityLog;
+use App\Models\AdminNotification;
 use App\Models\ConsultantRecord;
 use App\Models\ServiceRequest;
 use App\Models\VetRecord;
@@ -107,6 +109,11 @@ class PractitionerPortalController extends ApiController
         $isConsultant = $user->hasRole('consultant');
         $isAdmin = $user->hasRole('admin');
 
+        $pendingReschedules = \App\Models\RescheduleRequest::where('practitioner_id', $user->id)
+            ->where('status', 'pending')
+            ->get()
+            ->keyBy(fn ($r) => "{$r->record_type}-{$r->record_id}");
+
         $upcomingFollowUps = collect();
 
         if ($isVet || $isAdmin) {
@@ -117,11 +124,24 @@ class PractitionerPortalController extends ApiController
                 ->orderBy('next_follow_up', 'asc')
                 ->limit(5)
                 ->get()
-                ->map(function (VetRecord $rec) {
+                ->map(function (VetRecord $rec) use ($pendingReschedules) {
+                    $pending = $pendingReschedules->get("vet-{$rec->id}");
+
                     return [
                         'id' => $rec->id,
                         'type' => 'vet',
+                        'visit_date' => $rec->visit_date?->toDateString(),
                         'next_follow_up' => $rec->next_follow_up?->toDateString(),
+                        'original_follow_up_date' => $rec->original_follow_up_date?->toDateString(),
+                        'rescheduled_reason' => $rec->rescheduled_reason,
+                        'rescheduled_at' => $rec->rescheduled_at?->toISOString(),
+                        'rescheduled_by' => $rec->rescheduled_by,
+                        'pending_reschedule' => $pending ? [
+                            'id' => $pending->id,
+                            'new_date' => $pending->new_date->toDateString(),
+                            'reason' => $pending->reason,
+                            'status' => $pending->status,
+                        ] : null,
                         'summary' => $rec->treatment ?: ($rec->findings ?: 'Veterinary checkup'),
                         'findings' => $rec->findings,
                         'treatment' => $rec->treatment,
@@ -158,11 +178,24 @@ class PractitionerPortalController extends ApiController
                 ->orderBy('next_follow_up', 'asc')
                 ->limit(5)
                 ->get()
-                ->map(function (ConsultantRecord $rec) {
+                ->map(function (ConsultantRecord $rec) use ($pendingReschedules) {
+                    $pending = $pendingReschedules->get("consultant-{$rec->id}");
+
                     return [
                         'id' => $rec->id,
                         'type' => 'consultant',
+                        'visit_date' => $rec->visit_date?->toDateString(),
                         'next_follow_up' => $rec->next_follow_up?->toDateString(),
+                        'original_follow_up_date' => $rec->original_follow_up_date?->toDateString(),
+                        'rescheduled_reason' => $rec->rescheduled_reason,
+                        'rescheduled_at' => $rec->rescheduled_at?->toISOString(),
+                        'rescheduled_by' => $rec->rescheduled_by,
+                        'pending_reschedule' => $pending ? [
+                            'id' => $pending->id,
+                            'new_date' => $pending->new_date->toDateString(),
+                            'reason' => $pending->reason,
+                            'status' => $pending->status,
+                        ] : null,
                         'summary' => $rec->recommendation ?: 'Aquaculture advisory visit',
                         'recommendation' => $rec->recommendation,
                         'farm' => $rec->farm ? [
@@ -242,6 +275,10 @@ class PractitionerPortalController extends ApiController
                         'medicine_given' => $rec->medicine_given,
                         'recommendation' => null,
                         'next_follow_up' => $rec->next_follow_up?->toDateString(),
+                        'original_follow_up_date' => $rec->original_follow_up_date?->toDateString(),
+                        'rescheduled_reason' => $rec->rescheduled_reason,
+                        'rescheduled_at' => $rec->rescheduled_at?->toISOString(),
+                        'rescheduled_by' => $rec->rescheduled_by,
                         'parent_record_id' => $rec->parent_record_id,
                         'prescription' => $rec->prescription ? [
                             'id' => $rec->prescription->id,
@@ -293,6 +330,10 @@ class PractitionerPortalController extends ApiController
                         'medicine_given' => null,
                         'recommendation' => $rec->recommendation,
                         'next_follow_up' => $rec->next_follow_up?->toDateString(),
+                        'original_follow_up_date' => $rec->original_follow_up_date?->toDateString(),
+                        'rescheduled_reason' => $rec->rescheduled_reason,
+                        'rescheduled_at' => $rec->rescheduled_at?->toISOString(),
+                        'rescheduled_by' => $rec->rescheduled_by,
                         'parent_record_id' => $rec->parent_record_id,
                         'prescription' => $rec->prescription ? [
                             'id' => $rec->prescription->id,
@@ -363,5 +404,13 @@ class PractitionerPortalController extends ApiController
             'records' => $records->sortByDesc('visit_date')->values(),
             'reviews' => $reviews,
         ], 'Practitioner service history retrieved successfully');
+    }
+
+    /**
+     * Reschedule an upcoming follow-up for a visit record (Delegates to PractitionerFollowUpController).
+     */
+    public function rescheduleFollowUp(Request $request, string $type, int $id): JsonResponse
+    {
+        return app(PractitionerFollowUpController::class)->reschedule($request, $type, $id);
     }
 }

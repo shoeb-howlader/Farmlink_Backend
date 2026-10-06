@@ -170,8 +170,15 @@ class Product extends Model
      */
     public function getMinPriceAttribute(): float
     {
-        $min = $this->variants()->min('price');
+        if ($this->relationLoaded('variants')) {
+            if ($this->variants->isNotEmpty()) {
+                $min = $this->variants->min('price');
+                return $min !== null ? (float) $min : (float) $this->price;
+            }
+            return (float) $this->price;
+        }
 
+        $min = $this->variants()->min('price');
         return $min !== null ? (float) $min : (float) $this->price;
     }
 
@@ -180,8 +187,15 @@ class Product extends Model
      */
     public function getMaxPriceAttribute(): float
     {
-        $max = $this->variants()->max('price');
+        if ($this->relationLoaded('variants')) {
+            if ($this->variants->isNotEmpty()) {
+                $max = $this->variants->max('price');
+                return $max !== null ? (float) $max : (float) $this->price;
+            }
+            return (float) $this->price;
+        }
 
+        $max = $this->variants()->max('price');
         return $max !== null ? (float) $max : (float) $this->price;
     }
 
@@ -190,6 +204,10 @@ class Product extends Model
      */
     public function getHasMultipleVariantsAttribute(): bool
     {
+        if ($this->relationLoaded('variants')) {
+            return $this->variants->count() > 1;
+        }
+
         return $this->variants()->count() > 1;
     }
 
@@ -202,8 +220,7 @@ class Product extends Model
             if ($this->variants->isNotEmpty()) {
                 return (int) $this->variants->sum('stock');
             }
-        } elseif ($this->variants()->exists()) {
-            return (int) $this->variants()->sum('stock');
+
         }
 
         return (int) ($this->attributes['stock'] ?? 0);
@@ -218,8 +235,7 @@ class Product extends Model
             if ($this->variants->isNotEmpty()) {
                 return $this->variants->contains(fn ($v) => (int) $v->stock > 0);
             }
-        } elseif ($this->variants()->exists()) {
-            return $this->variants()->where('stock', '>', 0)->exists();
+
         }
 
         return (int) ($this->attributes['stock'] ?? 0) > 0;

@@ -37,18 +37,23 @@ class InvoiceController extends ApiController
     {
         $order->loadMissing(['items.product', 'user', 'farm']);
 
-        $pdf = Pdf::loadView('invoices.order', [
-            'order' => $order,
-        ]);
-
-        $pdf->setPaper('a4', 'portrait');
-
         $filename = "Invoice-{$order->invoice_number}.pdf";
+        $disposition = $request->boolean('download') ? 'attachment' : 'inline';
 
-        if ($request->boolean('download')) {
-            return $pdf->download($filename);
-        }
+        $cacheKey = "order_invoice_pdf_{$order->id}_" . ($order->updated_at ? $order->updated_at->timestamp : '0');
+        $pdfOutput = \Illuminate\Support\Facades\Cache::remember($cacheKey, 86400, function () use ($order) {
+            $pdf = Pdf::loadView('invoices.order', [
+                'order' => $order,
+            ]);
+            $pdf->setPaper('a4', 'portrait');
 
-        return $pdf->stream($filename);
+            return $pdf->output();
+        });
+
+        return response($pdfOutput, 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => "{$disposition}; filename=\"{$filename}\"",
+            'Cache-Control' => 'private, max-age=3600',
+        ]);
     }
 }

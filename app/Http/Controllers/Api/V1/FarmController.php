@@ -6,12 +6,15 @@ use App\Http\Requests\Api\V1\StoreFarmRequest;
 use App\Http\Requests\Api\V1\UpdateFarmRequest;
 use App\Http\Resources\V1\FarmResource;
 use App\Models\Farm;
+use App\Traits\HandlesFarmGalleryImages;
+use App\Traits\SyncsLocationData;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 
 class FarmController extends ApiController
 {
+    use SyncsLocationData, HandlesFarmGalleryImages;
     /**
      * Display a listing of the farms for the authenticated user (or filtered for staff).
      */
@@ -21,7 +24,14 @@ class FarmController extends ApiController
 
         $user = $request->user();
 
-        $query = Farm::query();
+        $query = Farm::with([
+            'division',
+            'districtModel',
+            'upazilaModel',
+            'unionModel',
+            'pourashava',
+            'images',
+        ])->withCount(['orders', 'vetRecords', 'consultantRecords']);
 
         if (! $user->hasRole('admin')) {
             $query->where('user_id', $user->id);
@@ -31,12 +41,20 @@ class FarmController extends ApiController
             $query->where('user_id', $user->id);
         }
 
-        $farms = $query->latest()->get();
+        $perPage = max(1, min((int) ($request->query('per_page') ?? 15), 50));
+        $farms = $query->latest()->paginate($perPage);
 
-        return $this->successResponse(
-            FarmResource::collection($farms),
-            'Farms retrieved successfully'
-        );
+        return response()->json([
+            'success' => true,
+            'message' => 'Farms retrieved successfully',
+            'data' => FarmResource::collection($farms->items()),
+            'meta' => [
+                'current_page' => $farms->currentPage(),
+                'last_page' => $farms->lastPage(),
+                'per_page' => $farms->perPage(),
+                'total' => $farms->total(),
+            ],
+        ]);
     }
 
     /**
@@ -50,8 +68,10 @@ class FarmController extends ApiController
             ? $request->input('user_id')
             : $request->user()->id;
 
+        $data = $this->syncLocationData($request->validated());
+
         $farm = Farm::create(array_merge(
-            $request->validated(),
+            $data,
             ['user_id' => $userId]
         ));
 
@@ -81,7 +101,8 @@ class FarmController extends ApiController
     {
         Gate::authorize('update', $farm);
 
-        $farm->update($request->validated());
+        $data = $this->syncLocationData($request->validated());
+        $farm->update($data);
 
         return $this->successResponse(
             new FarmResource($farm),

@@ -9,3 +9,6 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Schedule::command('farmlink:process-follow-ups')->daily();
+Schedule::command('farmlink:send-admin-digest --frequency=daily')->dailyAt('08:00');
+Schedule::command('farmlink:send-admin-digest --frequency=weekly')->weeklyOn(1, '08:00');
+Schedule::command('payments:cancel-expired')->everyThirtyMinutes();

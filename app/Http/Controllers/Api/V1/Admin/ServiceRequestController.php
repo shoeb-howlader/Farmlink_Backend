@@ -6,8 +6,11 @@ use App\Http\Controllers\Api\V1\ApiController;
 use App\Http\Requests\Api\V1\AssignServiceRequestRequest;
 use App\Http\Resources\V1\ServiceRequestResource;
 use App\Models\ActivityLog;
+use App\Models\AdminNotification;
+use App\Models\ConsultantRecord;
 use App\Models\ServiceRequest;
 use App\Models\User;
+use App\Models\VetRecord;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -20,8 +23,23 @@ class ServiceRequestController extends ApiController
      */
     public function index(Request $request): JsonResponse
     {
-        $query = ServiceRequest::with(['farm', 'farmer', 'assignedPractitioner', 'fulfilledRecord', 'parentRecord'])
-            ->urgentFirst();
+        $query = ServiceRequest::with([
+            'farm',
+            'farmer',
+            'assignedPractitioner',
+            'fulfilledRecord' => function (\Illuminate\Database\Eloquent\Relations\MorphTo $morphTo) {
+                $morphTo->morphWith([
+                    \App\Models\VetRecord::class => ['prescription.items.product', 'vet', 'farm', 'testResults', 'photos'],
+                    \App\Models\ConsultantRecord::class => ['prescription.items.product', 'consultant', 'farm', 'testResults', 'photos'],
+                ]);
+            },
+            'parentRecord' => function (\Illuminate\Database\Eloquent\Relations\MorphTo $morphTo) {
+                $morphTo->morphWith([
+                    \App\Models\VetRecord::class => ['prescription.items.product', 'vet', 'farm', 'testResults', 'photos'],
+                    \App\Models\ConsultantRecord::class => ['prescription.items.product', 'consultant', 'farm', 'testResults', 'photos'],
+                ]);
+            },
+        ])->urgentFirst();
 
         if ($request->filled('type') && $request->query('type') !== 'all') {
             $query->where('type', $request->query('type'));
@@ -66,9 +84,20 @@ class ServiceRequestController extends ApiController
         }
 
         if ($request->filled('search')) {
-            $search = $request->query('search');
-            $query->where(function ($q) use ($search) {
-                $q->where('description', 'like', "%{$search}%")
+            $search = trim((string) $request->query('search'));
+            $ticketId = null;
+            if (preg_match('/^(?:#?\s*SR\s*[-_]?\s*|#)?0*([1-9][0-9]*)$/i', $search, $matches)) {
+                $ticketId = (int) $matches[1];
+            }
+
+            $query->where(function ($q) use ($search, $ticketId) {
+                if ($ticketId !== null) {
+                    $q->where('id', $ticketId);
+                } else {
+                    $q->where('description', 'like', "%{$search}%");
+                }
+
+                $q->orWhere('description', 'like', "%{$search}%")
                     ->orWhereHas('farmer', function ($fq) use ($search) {
                         $fq->where('name', 'like', "%{$search}%")
                             ->orWhere('phone', 'like', "%{$search}%");
@@ -135,6 +164,14 @@ class ServiceRequestController extends ApiController
         }
 
         $farmer = User::findOrFail($validated['farmer_id']);
+
+        if ($farmer->is_blacklisted) {
+            return $this->errorResponse('Cannot create request: Farmer account is blacklisted from platform services (' . ($farmer->blacklist_reason ?? 'Administrative ban') . ').', 422);
+        }
+
+        if ($farmer->consultations_blocked) {
+            return $this->errorResponse('Cannot create request: Farmer has field consultations and pond visits restricted.', 422);
+        }
 
         $photoPath = null;
         if ($request->hasFile('photo')) {
@@ -248,6 +285,17 @@ class ServiceRequestController extends ApiController
             $practitioner->id
         );
 
+        // Supplementary email channel for practitioner if email is configured
+        if ($practitioner->email) {
+            try {
+                $serviceRequest->loadMissing(['farm', 'farmer']);
+                \Illuminate\Support\Facades\Mail::to($practitioner->email)
+                    ->queue(new \App\Mail\PractitionerAssignmentMail($serviceRequest, $practitioner));
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning("[PRACTITIONER ASSIGNMENT MAIL ERROR] Could not queue email for SR #{$serviceRequest->id}: " . $e->getMessage());
+            }
+        }
+
         return $this->successResponse(
             new ServiceRequestResource($serviceRequest->load(['farm', 'farmer', 'assignedPractitioner', 'fulfilledRecord'])),
             "Service request assigned to {$practitioner->name} successfully"
@@ -325,10 +373,13 @@ class ServiceRequestController extends ApiController
      */
     public function metrics(): JsonResponse
     {
-        $openCount = ServiceRequest::whereIn('status', ['pending', 'assigned', 'in_progress'])->count();
+        $pendingCount = ServiceRequest::where('status', 'pending')->count();
+        $assignedCount = ServiceRequest::whereIn('status', ['assigned', 'in_progress'])->count();
+        $openCount = $pendingCount + $assignedCount;
         $urgentCount = ServiceRequest::whereIn('status', ['pending', 'assigned', 'in_progress'])
             ->where('urgency', 'urgent')
             ->count();
+        $completedTotal = ServiceRequest::where('status', 'completed')->count();
         $completedThisMonth = ServiceRequest::where('status', 'completed')
             ->where('completed_at', '>=', Carbon::now()->startOfMonth())
             ->count();
@@ -389,12 +440,137 @@ class ServiceRequestController extends ApiController
 
         return $this->successResponse([
             'open_requests' => $openCount,
+            'pending_requests' => $pendingCount,
+            'assigned_requests' => $assignedCount,
             'urgent_requests' => $urgentCount,
             'completed_this_month' => $completedThisMonth,
+            'completed_total' => $completedTotal,
             'avg_turnaround_hours' => $avgTurnaroundHours,
             'follow_up_completion_rate' => $followUpCompletionRate,
             'scheduled_follow_ups_count' => $totalScheduled,
             'completed_follow_ups_count' => $completedCount,
         ], 'Service request metrics retrieved successfully');
+    }
+
+    /**
+     * Admin: Directly update or schedule a follow-up date for a completed service request.
+     */
+    public function updateFollowUp(Request $request, ServiceRequest $serviceRequest): JsonResponse
+    {
+        $validated = $request->validate([
+            'next_follow_up' => ['required', 'date', 'after_or_equal:today'],
+            'reason' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $serviceRequest->loadMissing(['fulfilledRecord', 'farm.farmer', 'assignedPractitioner']);
+
+        $record = $serviceRequest->fulfilledRecord;
+        if (! $record) {
+            if ($serviceRequest->type === 'vet') {
+                $record = VetRecord::where('farm_id', $serviceRequest->farm_id)
+                    ->latest('visit_date')
+                    ->first();
+            } else {
+                $record = ConsultantRecord::where('farm_id', $serviceRequest->farm_id)
+                    ->latest('visit_date')
+                    ->first();
+            }
+        }
+
+        if (! $record) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No fulfilled clinical or advisory visit record found for this service request.',
+            ], 422);
+        }
+
+        $oldDate = $record->next_follow_up ? $record->next_follow_up->toDateString() : null;
+        $newDate = Carbon::parse($validated['next_follow_up'])->toDateString();
+        $reason = trim($validated['reason'] ?? 'Directly updated by administrator.');
+
+        // Preserve original follow-up date if set
+        if (! $record->original_follow_up_date && $oldDate) {
+            $record->original_follow_up_date = $oldDate;
+        }
+
+        $record->next_follow_up = $newDate;
+        $record->rescheduled_reason = $reason;
+        $record->rescheduled_at = now();
+        $record->rescheduled_by = $request->user()->id;
+        $record->save();
+
+        // If automated child follow-up service request exists, update channel
+        $recordClass = get_class($record);
+        $childSr = ServiceRequest::where('parent_record_type', $recordClass)
+            ->where('parent_record_id', $record->id)
+            ->first();
+
+        if ($childSr) {
+            $childSr->update([
+                'source_channel' => 'follow_up_rescheduled',
+            ]);
+        }
+
+        // Activity Log
+        ActivityLog::log(
+            'service_request.follow_up_rescheduled',
+            $serviceRequest,
+            [
+                'service_request_id' => $serviceRequest->id,
+                'record_id' => $record->id,
+                'record_type' => $serviceRequest->type,
+                'old_date' => $oldDate,
+                'new_date' => $newDate,
+                'reason' => $reason,
+                'rescheduled_by_admin' => $request->user()->name,
+            ],
+            $request->user()
+        );
+
+        // Notify assigned specialist
+        if ($serviceRequest->assigned_to) {
+            AdminNotification::notify(
+                'follow_up.rescheduled',
+                "Follow-up Date Updated: {$serviceRequest->farm?->farm_name}",
+                "Administrator {$request->user()->name} updated the follow-up visit for {$serviceRequest->farm?->farm_name} to {$newDate}. Reason: {$reason}",
+                [
+                    'service_request_id' => $serviceRequest->id,
+                    'record_id' => $record->id,
+                    'old_date' => $oldDate,
+                    'new_date' => $newDate,
+                    'reason' => $reason,
+                ],
+                $serviceRequest->assigned_to
+            );
+        }
+
+        // Notify requesting farmer if available
+        if ($serviceRequest->farmer_id) {
+            AdminNotification::notify(
+                'follow_up.rescheduled',
+                "Follow-up Visit Scheduled: {$newDate}",
+                "Your return aquaculture visit for {$serviceRequest->farm?->farm_name} is now scheduled on " . Carbon::parse($newDate)->format('d M, Y') . ".",
+                [
+                    'service_request_id' => $serviceRequest->id,
+                    'record_id' => $record->id,
+                    'new_date' => $newDate,
+                    'old_date' => $oldDate,
+                ],
+                $serviceRequest->farmer_id
+            );
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Follow-up date successfully updated.',
+            'data' => [
+                'service_request_id' => $serviceRequest->id,
+                'record_id' => $record->id,
+                'next_follow_up' => $newDate,
+                'original_follow_up_date' => $record->original_follow_up_date ? Carbon::parse($record->original_follow_up_date)->toDateString() : null,
+                'rescheduled_reason' => $reason,
+                'rescheduled_at' => $record->rescheduled_at?->toISOString(),
+            ],
+        ]);
     }
 }

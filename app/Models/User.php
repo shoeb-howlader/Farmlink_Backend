@@ -13,7 +13,7 @@ use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 use Spatie\Permission\Traits\HasRoles;
 
-#[Fillable(['name', 'email', 'phone', 'phone_verified_at', 'phone_otp', 'phone_otp_expires_at', 'phone_otp_sent_at', 'district', 'gender', 'profile_image_path', 'profile_image_thumbnail_path', 'password', 'is_active', 'status', 'rejection_reason', 'approved_at', 'approved_by', 'rejected_at', 'rejected_by', 'avatar_url', 'last_login_at'])]
+#[Fillable(['name', 'email', 'phone', 'phone_verified_at', 'phone_otp', 'phone_otp_expires_at', 'phone_otp_sent_at', 'district', 'gender', 'profile_image_path', 'profile_image_thumbnail_path', 'password', 'is_active', 'status', 'rejection_reason', 'approved_at', 'approved_by', 'rejected_at', 'rejected_by', 'avatar_url', 'last_login_at', 'delivered_orders_count', 'refused_cod_orders_count', 'cod_blocked', 'consultations_blocked', 'is_blacklisted', 'blacklist_reason'])]
 #[Hidden(['password', 'remember_token', 'phone_otp'])]
 class User extends Authenticatable
 {
@@ -37,6 +37,11 @@ class User extends Authenticatable
             'password' => 'hashed',
             'is_active' => 'boolean',
             'last_login_at' => 'datetime',
+            'cod_blocked' => 'boolean',
+            'consultations_blocked' => 'boolean',
+            'is_blacklisted' => 'boolean',
+            'delivered_orders_count' => 'integer',
+            'refused_cod_orders_count' => 'integer',
         ];
     }
 
@@ -47,26 +52,12 @@ class User extends Authenticatable
 
     public function isApproved(): bool
     {
-        if (! $this->hasRole('farmer')) {
-            return true;
-        }
-
         return $this->status === 'active';
-    }
-
-    public function isPendingApproval(): bool
-    {
-        return $this->status === 'pending_approval';
     }
 
     public function isPendingVerification(): bool
     {
         return $this->status === 'pending_verification';
-    }
-
-    public function isRejected(): bool
-    {
-        return $this->status === 'rejected';
     }
 
     public function approvedBy(): \Illuminate\Database\Eloquent\Relations\BelongsTo
