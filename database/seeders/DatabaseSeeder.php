@@ -179,8 +179,7 @@ class DatabaseSeeder extends Seeder
         );
 
         $demoPrescription = \App\Models\Prescription::firstOrCreate(
-            ['vet_record_id' => $completedVetRec->id],
-            ['notes' => 'Complete antibacterial protocol for nursery pond gill necrosis.']
+            ['vet_record_id' => $completedVetRec->id]
         );
         if ($demoPrescription->items()->count() === 0) {
             $oxyProduct = Product::where('name', 'like', '%Oxy%')->first();
