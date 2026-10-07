@@ -1,0 +1,13 @@
+.git
+.github
+.agents
+.claude
+node_modules
+vendor
+.env
+.env.*
+storage/*.key
+storage/logs/*
+tests
+Dockerfile
+.dockerignore
