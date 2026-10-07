@@ -314,6 +314,12 @@ class DatabaseSeeder extends Seeder
         $this->call(PaymentSeeder::class);
 
         // 11. Geocode data & Pourashavas
+        if (\App\Models\Division::count() === 0) {
+            $this->call(\Devfaysal\BangladeshGeocode\Seeders\DivisionSeeder::class);
+            $this->call(\Devfaysal\BangladeshGeocode\Seeders\DistrictSeeder::class);
+            $this->call(\Devfaysal\BangladeshGeocode\Seeders\UpazilaSeeder::class);
+            $this->call(\Devfaysal\BangladeshGeocode\Seeders\UnionSeeder::class);
+        }
         $this->call(BengaliGeocodeSeeder::class);
         $this->call(PourashavaSeeder::class);
     }
