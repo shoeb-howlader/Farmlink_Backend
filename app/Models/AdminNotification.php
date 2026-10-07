@@ -50,7 +50,7 @@ class AdminNotification extends Model
      */
     public static function notify(string $type, string $title, string $message, array $data = [], ?int $userId = null): self
     {
-        return self::create([
+        $notification = self::create([
             'user_id' => $userId,
             'type' => $type,
             'title' => $title,
@@ -59,6 +59,13 @@ class AdminNotification extends Model
             'read_at' => null,
             'created_at' => now(),
         ]);
+
+        if ($userId) {
+            $url = $data['url'] ?? $data['action_url'] ?? '/notifications';
+            \App\Services\WebPushService::sendToUser($userId, $title, $message, $url, $data);
+        }
+
+        return $notification;
     }
 
     public function isRead(): bool

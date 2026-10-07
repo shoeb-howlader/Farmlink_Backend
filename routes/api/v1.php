@@ -164,6 +164,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::patch('/notifications/{id}/read', [NotificationController::class, 'markAsRead'])->name('notifications.read');
     Route::post('/notifications/mark-all-read', [NotificationController::class, 'markAllRead'])->name('notifications.mark-all-read');
 
+    // Web Push Notifications
+    Route::get('/push/vapid-key', [\App\Http\Controllers\Api\V1\PushNotificationController::class, 'vapidKey'])->name('push.vapid-key');
+    Route::post('/push/subscribe', [\App\Http\Controllers\Api\V1\PushNotificationController::class, 'subscribe'])->name('push.subscribe');
+    Route::post('/push/unsubscribe', [\App\Http\Controllers\Api\V1\PushNotificationController::class, 'unsubscribe'])->name('push.unsubscribe');
+    Route::post('/push/test', [\App\Http\Controllers\Api\V1\PushNotificationController::class, 'test'])->name('push.test');
+
     // Chat & Messaging (Farmer, Practitioner, Staff)
     Route::get('/chat/conversations', [ChatController::class, 'index'])->name('chat.conversations.index');
     Route::post('/chat/conversations', [ChatController::class, 'store'])->name('chat.conversations.store');
