@@ -310,7 +310,10 @@ class DatabaseSeeder extends Seeder
         // 9. Seed Product Reviews & Delivered Orders
         $this->call(ProductReviewSeeder::class);
 
-        // 10. Geocode data & Pourashavas
+        // 10. Seed Payments & Reconciliation Transactions
+        $this->call(PaymentSeeder::class);
+
+        // 11. Geocode data & Pourashavas
         $this->call(BengaliGeocodeSeeder::class);
         $this->call(PourashavaSeeder::class);
     }
