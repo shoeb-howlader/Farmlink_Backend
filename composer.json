@@ -17,7 +17,10 @@
         "laravel/reverb": "^1.12",
         "laravel/sanctum": "^4.0",
         "laravel/tinker": "^3.0",
+        "league/flysystem-aws-s3-v3": "^3.0",
         "minishlink/web-push": "*",
+        "sentry/sentry-laravel": "^4.28",
+        "spatie/laravel-backup": "^10.3",
         "spatie/laravel-permission": "^8.3",
         "symfony/http-client": "7.4",
         "symfony/postmark-mailer": "7.4"

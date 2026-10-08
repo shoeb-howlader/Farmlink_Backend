@@ -22,12 +22,18 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->prependToGroup('api', \App\Http\Middleware\QueryTokenToHeader::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        \Sentry\Laravel\Integration::handles($exceptions);
+
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*') || $request->expectsJson(),
         );
 
         $exceptions->render(function (\Illuminate\Database\QueryException $e, Request $request) {
             if ($request->is('api/*') || $request->expectsJson()) {
+                if (app()->bound('sentry')) {
+                    \Sentry\captureException($e);
+                }
+
                 \Illuminate\Support\Facades\Log::error('Database QueryException: ' . $e->getMessage(), [
                     'sql' => $e->getSql(),
                     'bindings' => $e->getBindings(),
@@ -44,6 +50,10 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $exceptions->render(function (\PDOException $e, Request $request) {
             if ($request->is('api/*') || $request->expectsJson()) {
+                if (app()->bound('sentry')) {
+                    \Sentry\captureException($e);
+                }
+
                 \Illuminate\Support\Facades\Log::error('Database PDOException: ' . $e->getMessage(), [
                     'url' => $request->fullUrl(),
                     'method' => $request->method(),

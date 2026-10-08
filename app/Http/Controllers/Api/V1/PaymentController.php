@@ -26,62 +26,97 @@ class PaymentController extends Controller
         Log::info('SSLCommerz IPN received', ['payload' => $payload]);
 
         $valId = $request->input('val_id');
+        $tranId = $request->input('tran_id');
 
-        if (empty($valId)) {
-            Log::warning('SSLCommerz IPN received without val_id', ['payload' => $payload]);
+        // Reject missing or malformed val_id
+        if (empty($valId) || ! is_string($valId) || strlen($valId) < 3 || strlen($valId) > 150) {
+            Log::warning('SSLCommerz IPN rejected: missing or malformed val_id', [
+                'ip' => $request->ip(),
+                'val_id_type' => gettype($valId),
+            ]);
+
             return response()->json([
                 'success' => false,
-                'message' => 'Validation ID (val_id) is missing.',
+                'message' => 'Invalid or missing validation identifier.',
             ], 400);
         }
 
-        // Call SSLCommerz server-to-server Validation API
-        $valData = $this->sslCommerzService->validateTransaction($valId);
-        $valStatus = strtoupper($valData['status'] ?? '');
-
-        if ($valStatus !== 'VALID' && $valStatus !== 'VALIDATED') {
-            Log::error('SSLCommerz IPN validation failed via Validation API', [
-                'val_id' => $valId,
-                'response' => $valData,
+        // Validate tran_id if provided
+        if ($tranId !== null && (! is_string($tranId) || strlen($tranId) > 150)) {
+            Log::warning('SSLCommerz IPN rejected: malformed tran_id', [
+                'ip' => $request->ip(),
             ]);
-
-            $tranId = $valData['tran_id'] ?? $request->input('tran_id');
-            if ($tranId) {
-                $order = Order::where('gateway_transaction_id', $tranId)->first();
-                if ($order && in_array($order->status, ['pending_payment', 'pending'])) {
-                    $order->update([
-                        'status' => 'payment_failed',
-                        'payment_status' => 'failed',
-                    ]);
-
-                    \App\Models\Payment::where('order_id', $order->id)->update([
-                        'status' => 'failed',
-                    ]);
-
-                    app(\App\Services\PaymentFailureEscalationService::class)->checkAndEscalate($order->user_id);
-                }
-            }
 
             return response()->json([
                 'success' => false,
-                'message' => 'Transaction could not be verified by SSLCommerz validation API.',
-                'gateway_status' => $valStatus,
-            ], 422);
+                'message' => 'Invalid transaction identifier.',
+            ], 400);
         }
 
-        // Process verified transaction, decrement deferred stock, mark paid
-        $result = $this->sslCommerzService->processValidatedPayment($valData, $valId);
+        try {
+            // Call SSLCommerz server-to-server Validation API
+            $valData = $this->sslCommerzService->validateTransaction($valId);
+            $valStatus = strtoupper($valData['status'] ?? '');
 
-        if (! $result['success']) {
-            return response()->json($result, 422);
+            if ($valStatus !== 'VALID' && $valStatus !== 'VALIDATED') {
+                Log::error('SSLCommerz IPN validation failed via Validation API', [
+                    'val_id' => $valId,
+                    'response' => $valData,
+                ]);
+
+                $tranId = $valData['tran_id'] ?? $request->input('tran_id');
+                if ($tranId) {
+                    $order = Order::where('gateway_transaction_id', $tranId)->first();
+                    if ($order && in_array($order->status, ['pending_payment', 'pending'])) {
+                        $order->update([
+                            'status' => 'payment_failed',
+                            'payment_status' => 'failed',
+                        ]);
+
+                        \App\Models\Payment::where('order_id', $order->id)->update([
+                            'status' => 'failed',
+                        ]);
+
+                        app(\App\Services\PaymentFailureEscalationService::class)->checkAndEscalate($order->user_id);
+                    }
+                }
+
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Transaction could not be verified by SSLCommerz validation API.',
+                    'gateway_status' => $valStatus,
+                ], 422);
+            }
+
+            // Process verified transaction, decrement deferred stock, mark paid
+            $result = $this->sslCommerzService->processValidatedPayment($valData, $valId);
+
+            if (! $result['success']) {
+                return response()->json($result, 422);
+            }
+
+            return response()->json([
+                'success' => true,
+                'status' => 'success',
+                'message' => 'IPN validated and processed successfully.',
+                'order_id' => $result['order']->id ?? null,
+            ]);
+        } catch (\Throwable $e) {
+            if (app()->bound('sentry')) {
+                \Sentry\captureException($e);
+            }
+
+            Log::error('SSLCommerz IPN unhandled exception: ' . $e->getMessage(), [
+                'val_id' => $valId,
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'An unexpected error occurred while processing the IPN.',
+            ], 500);
         }
-
-        return response()->json([
-            'success' => true,
-            'status' => 'success',
-            'message' => 'IPN validated and processed successfully.',
-            'order_id' => $result['order']->id ?? null,
-        ]);
     }
 
     /**

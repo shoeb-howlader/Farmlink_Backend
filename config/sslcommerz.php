@@ -1,8 +1,8 @@
 <?php
 
 return [
-    'store_id' => env('SSLCZ_STORE_ID', env('SSLCOMMERZ_STORE_ID', 'test69e3a752da0ff')),
-    'store_password' => env('SSLCZ_STORE_PASSWORD', env('SSLCOMMERZ_STORE_PASSWORD', 'test69e3a752da0ff@ssl')),
+    'store_id' => env('SSLCZ_STORE_ID', env('SSLCOMMERZ_STORE_ID')),
+    'store_password' => env('SSLCZ_STORE_PASSWORD', env('SSLCOMMERZ_STORE_PASSWORD')),
     'is_sandbox' => filter_var(env('SSLCZ_TESTMODE', env('SSLCOMMERZ_IS_SANDBOX', true)), FILTER_VALIDATE_BOOLEAN),
 
     'sandbox_url' => 'https://sandbox.sslcommerz.com',
@@ -10,6 +10,7 @@ return [
 
     'session_endpoint' => '/gwprocess/v4/api.php',
     'validation_endpoint' => '/validator/api/validationserverAPI.php',
+    'query_endpoint' => '/validator/api/merchantTransIDvalidationAPI.php',
     'refund_endpoint' => '/validator/api/merchantTransIDvalidationAPI.php',
 
     'frontend_url' => env('FRONTEND_URL', 'http://localhost:3000'),

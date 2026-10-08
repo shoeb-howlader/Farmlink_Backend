@@ -145,7 +145,7 @@ class SSLCommerzService
      */
     public function queryTransaction(string $tranId): array
     {
-        $endpoint = $this->baseUrl . config('sslcommerz.refund_endpoint', '/validator/api/merchantTransIDvalidationAPI.php');
+        $endpoint = $this->baseUrl . config('sslcommerz.query_endpoint', '/validator/api/merchantTransIDvalidationAPI.php');
 
         try {
             $response = Http::timeout(15)->get($endpoint, [
@@ -155,11 +155,31 @@ class SSLCommerzService
                 'format' => 'json',
             ]);
 
+            if (! $response->successful()) {
+                Log::error("SSLCommerz queryTransaction HTTP error: {$response->status()}");
+                return ['status' => 'GATEWAY_ERROR', 'message' => "HTTP {$response->status()}"];
+            }
+
             $json = $response->json();
-            return is_array($json) ? $json : [];
+            if (! is_array($json)) {
+                return ['status' => 'NO_TRANSACTION'];
+            }
+
+            // In SSLCommerz merchantTransIDvalidationAPI, data often lives under element array
+            if (! empty($json['element']) && is_array($json['element'])) {
+                $primary = $json['element'][0] ?? [];
+                if (is_array($primary)) {
+                    return array_merge($json, $primary);
+                }
+            }
+
+            return $json;
         } catch (Exception $e) {
+            if (app()->bound('sentry')) {
+                \Sentry\captureException($e);
+            }
             Log::error("SSLCommerz queryTransaction API failed for tran_id: {$tranId} - " . $e->getMessage());
-            return ['status' => 'FAILED', 'error' => $e->getMessage()];
+            return ['status' => 'GATEWAY_UNREACHABLE', 'error' => $e->getMessage()];
         }
     }
 
@@ -186,8 +206,8 @@ class SSLCommerzService
     }
 
     /**
-     * Process validated payment from IPN webhook.
-     * Decrements deferred stock, marks order paid, records ledger entry.
+     * Process validated payment from IPN webhook or reconciliation command.
+     * Enforces row locking, idempotency, tamper detection, and oversell protection.
      */
     public function processValidatedPayment(array $valData, string $rawValId): array
     {
@@ -198,11 +218,8 @@ class SSLCommerzService
 
         // Find the pending order
         $order = Order::where('gateway_transaction_id', $tranId)->first();
-        if (! $order) {
-            // Also check by ID if value_a was returned
-            if (! empty($valData['value_a'])) {
-                $order = Order::find($valData['value_a']);
-            }
+        if (! $order && ! empty($valData['value_a'])) {
+            $order = Order::find($valData['value_a']);
         }
 
         if (! $order) {
@@ -210,80 +227,154 @@ class SSLCommerzService
             return ['success' => false, 'message' => "Order not found for transaction: {$tranId}"];
         }
 
-        // Idempotency: if already paid, return early
+        // Early check outside lock
         if ($order->payment_status === 'paid') {
-            return ['success' => true, 'order' => $order, 'message' => 'Order is already marked as paid.'];
+            return ['success' => true, 'order' => $order, 'already_processed' => true, 'message' => 'Order is already marked as paid.'];
         }
 
-        // Verify currency and amount
+        // Verify currency and amount (Tamper check)
         $gatewayAmount = (float) ($valData['amount'] ?? 0);
         $orderAmount = (float) $order->total;
         $currency = strtoupper($valData['currency'] ?? 'BDT');
 
         if ($currency !== 'BDT') {
-            Log::error("SSLCommerz currency mismatch for Order #{$order->id}: Expected BDT, got {$currency}");
-            return ['success' => false, 'message' => 'Currency mismatch'];
+            Log::critical("SSLCommerz currency tamper mismatch for Order #{$order->id}: Expected BDT, got {$currency}");
+            $order->update([
+                'status' => 'paid_needs_review',
+                'notes' => trim(($order->notes ? $order->notes . "\n" : '') . "[Alert: Currency mismatch - expected BDT, received {$currency}]"),
+            ]);
+            app(\App\Services\SystemAlertService::class)->sendCriticalAlert(
+                "Payment Currency Mismatch for Order #{$order->id}",
+                "Expected BDT, received {$currency} from gateway. Flagged for review.",
+                ['order_id' => $order->id, 'currency' => $currency, 'tran_id' => $tranId]
+            );
+            return ['success' => false, 'message' => 'Currency mismatch between order and gateway payment'];
         }
 
         if (abs($orderAmount - $gatewayAmount) > 0.05) {
-            Log::error("SSLCommerz amount mismatch for Order #{$order->id}: Order total {$orderAmount}, gateway paid {$gatewayAmount}");
+            Log::critical("SSLCommerz amount tamper mismatch for Order #{$order->id}: Order total {$orderAmount}, gateway paid {$gatewayAmount}");
+            $order->update([
+                'status' => 'paid_needs_review',
+                'notes' => trim(($order->notes ? $order->notes . "\n" : '') . "[Alert: Amount mismatch - order total ৳{$orderAmount}, paid ৳{$gatewayAmount}]"),
+            ]);
+            app(\App\Services\SystemAlertService::class)->sendCriticalAlert(
+                "Payment Amount Tamper Mismatch for Order #{$order->id}",
+                "Order total ৳{$orderAmount} does not match gateway payment amount ৳{$gatewayAmount}. Flagged for review.",
+                ['order_id' => $order->id, 'order_total' => $orderAmount, 'paid_amount' => $gatewayAmount, 'tran_id' => $tranId]
+            );
             return ['success' => false, 'message' => 'Paid amount does not match order total'];
         }
 
-        // Atomic DB transaction to decrement stock and activate order
+        // Atomic DB transaction with row lock to prevent race conditions & double decrements
         return DB::transaction(function () use ($order, $valData, $rawValId, $tranId) {
-            $order->loadMissing(['items.product', 'items.variant']);
+            $lockedOrder = Order::where('id', $order->id)->lockForUpdate()->first();
+
+            if (! $lockedOrder) {
+                return ['success' => false, 'message' => 'Order not found under lock.'];
+            }
+
+            // Strict Idempotency Check inside lock
+            if ($lockedOrder->payment_status === 'paid') {
+                return [
+                    'success' => true,
+                    'order' => $lockedOrder,
+                    'already_processed' => true,
+                    'message' => 'Order is already marked as paid.',
+                ];
+            }
+
+            $lockedOrder->loadMissing(['items.product', 'items.variant']);
             $hasStockShortage = false;
 
-            // Deferred Stock Decrement Logic
-            foreach ($order->items as $item) {
+            // 1. Inspect inventory availability first (prevent silent oversell)
+            foreach ($lockedOrder->items as $item) {
                 if ($item->product_variant_id) {
                     $variant = ProductVariant::where('id', $item->product_variant_id)->lockForUpdate()->first();
-                    if ($variant) {
-                        $updated = ProductVariant::where('id', $variant->id)
-                            ->where('stock', '>=', $item->quantity)
-                            ->decrement('stock', $item->quantity);
-
-                        if (! $updated) {
-                            $hasStockShortage = true;
-                            Log::warning("Insufficient stock on post-payment decrement for Order #{$order->id}, Variant #{$variant->id}");
-                        }
-
-                        Product::where('id', $item->product_id)->decrement('stock', $item->quantity);
+                    if (! $variant || $variant->stock < $item->quantity) {
+                        $hasStockShortage = true;
+                        break;
                     }
                 } else {
                     $product = Product::where('id', $item->product_id)->lockForUpdate()->first();
-                    if ($product) {
-                        $updated = Product::where('id', $product->id)
-                            ->where('stock', '>=', $item->quantity)
-                            ->decrement('stock', $item->quantity);
-
-                        if (! $updated) {
-                            $hasStockShortage = true;
-                            Log::warning("Insufficient stock on post-payment decrement for Order #{$order->id}, Product #{$product->id}");
-                        }
+                    if (! $product || $product->stock < $item->quantity) {
+                        $hasStockShortage = true;
+                        break;
                     }
                 }
             }
 
-            // Move order from pending_payment to normal pending/confirmed status
-            $newStatus = $hasStockShortage ? 'pending' : 'pending';
+            // If stock depleted before late payment confirmed: mark "paid_needs_review", alert admin
+            if ($hasStockShortage) {
+                $lockedOrder->update([
+                    'status' => 'paid_needs_review',
+                    'payment_status' => 'paid',
+                    'paid_at' => now(),
+                    'gateway_transaction_id' => $tranId,
+                    'gateway_payment_details' => $valData,
+                    'notes' => trim(($lockedOrder->notes ? $lockedOrder->notes . "\n" : '') . "[Inventory Alert: Stock depleted prior to payment confirmation. Pending admin decision.]"),
+                ]);
 
-            $order->update([
-                'status' => $newStatus,
+                \App\Models\Payment::updateOrCreate(
+                    ['order_id' => $lockedOrder->id],
+                    [
+                        'user_id' => $lockedOrder->user_id,
+                        'method' => 'sslcommerz',
+                        'amount' => $lockedOrder->total,
+                        'status' => 'success',
+                        'paid_at' => now(),
+                        'gateway_transaction_id' => $tranId,
+                        'gateway_response' => $valData,
+                        'notes' => 'Paid with stock shortage - requires admin fulfillment or refund choice',
+                    ]
+                );
+
+                AdminNotification::notify(
+                    'order.needs_review',
+                    "Order #{$lockedOrder->id} Paid - Stock Insufficient",
+                    "Order #{$lockedOrder->id} was paid online (৳" . number_format($lockedOrder->total, 2) . "), but stock was depleted. Review to fulfill or refund.",
+                    ['order_id' => $lockedOrder->id, 'tran_id' => $tranId],
+                    null
+                );
+
+                ActivityLog::log(
+                    'order_paid_stock_depleted',
+                    $lockedOrder,
+                    ['reason' => 'Late payment confirmation after stock depletion. Marked paid_needs_review.'],
+                    $lockedOrder->user_id
+                );
+
+                return [
+                    'success' => true,
+                    'order' => $lockedOrder,
+                    'stock_shortage' => true,
+                    'needs_review' => true,
+                ];
+            }
+
+            // 2. Normal path: Decrement stock atomically
+            foreach ($lockedOrder->items as $item) {
+                if ($item->product_variant_id) {
+                    ProductVariant::where('id', $item->product_variant_id)->decrement('stock', $item->quantity);
+                    Product::where('id', $item->product_id)->decrement('stock', $item->quantity);
+                } else {
+                    Product::where('id', $item->product_id)->decrement('stock', $item->quantity);
+                }
+            }
+
+            $lockedOrder->update([
+                'status' => 'pending',
                 'payment_status' => 'paid',
                 'paid_at' => now(),
                 'gateway_transaction_id' => $tranId,
                 'gateway_payment_details' => $valData,
             ]);
 
-            // Update or create associated Payment record to success
             \App\Models\Payment::updateOrCreate(
-                ['order_id' => $order->id],
+                ['order_id' => $lockedOrder->id],
                 [
-                    'user_id' => $order->user_id,
+                    'user_id' => $lockedOrder->user_id,
                     'method' => 'sslcommerz',
-                    'amount' => $order->total,
+                    'amount' => $lockedOrder->total,
                     'status' => 'success',
                     'paid_at' => now(),
                     'gateway_transaction_id' => $tranId,
@@ -291,39 +382,29 @@ class SSLCommerzService
                 ]
             );
 
-            // Record farm ledger entry now that payment is confirmed
-            if ($order->farm_id) {
-                FarmLedgerEntry::recordOrderExpense($order);
+            if ($lockedOrder->farm_id) {
+                FarmLedgerEntry::recordOrderExpense($lockedOrder);
             }
 
-            // Notifications
             AdminNotification::notify(
                 'payment',
                 'Online Payment Received',
-                "Order #{$order->id} paid ৳" . number_format($order->total, 2) . " via SSLCommerz (Ref: {$tranId})." . ($hasStockShortage ? ' NOTE: Low stock flag requires inventory review!' : ''),
-                [
-                    'order_id' => $order->id,
-                    'val_id' => $rawValId,
-                    'tran_id' => $tranId,
-                    'stock_warning' => $hasStockShortage,
-                ]
+                "Order #{$lockedOrder->id} paid ৳" . number_format($lockedOrder->total, 2) . " via SSLCommerz (Ref: {$tranId}).",
+                ['order_id' => $lockedOrder->id, 'val_id' => $rawValId, 'tran_id' => $tranId],
+                null
             );
 
             ActivityLog::log(
                 'sslcommerz_payment_verified',
-                $order,
-                [
-                    'tran_id' => $tranId,
-                    'amount' => $order->total,
-                    'stock_warning' => $hasStockShortage,
-                ],
-                $order->user_id
+                $lockedOrder,
+                ['tran_id' => $tranId, 'amount' => $lockedOrder->total],
+                $lockedOrder->user_id
             );
 
             return [
                 'success' => true,
-                'order' => $order,
-                'stock_shortage' => $hasStockShortage,
+                'order' => $lockedOrder,
+                'stock_shortage' => false,
             ];
         });
     }

@@ -74,7 +74,9 @@ Route::get('/taxonomies', [\App\Http\Controllers\Api\V1\TaxonomyController::clas
 Route::get('/payment-methods', [\App\Http\Controllers\Api\V1\PaymentMethodController::class, 'index'])->name('payment-methods.index');
 
 // SSLCommerz Payment Gateway Endpoints
-Route::post('/payments/sslcommerz/ipn', [PaymentController::class, 'handleIpn'])->name('payments.sslcommerz.ipn');
+Route::post('/payments/sslcommerz/ipn', [PaymentController::class, 'handleIpn'])
+    ->middleware('throttle:60,1')
+    ->name('payments.sslcommerz.ipn');
 Route::match(['get', 'post'], '/payments/sslcommerz/return', [PaymentController::class, 'handleReturn'])->name('payments.sslcommerz.return');
 Route::get('/payments/sslcommerz/status/{orderId}', [PaymentController::class, 'checkStatus'])->name('payments.sslcommerz.status');
 

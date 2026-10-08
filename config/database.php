@@ -97,6 +97,11 @@ return [
             'prefix_indexes' => true,
             'search_path' => 'public',
             'sslmode' => env('DB_SSLMODE', 'prefer'),
+            'dump' => [
+                'dump_binary_path' => env('DB_DUMP_PATH', env('DUMP_BINARY_PATH', file_exists('C:\\laragon\\bin\\postgresql\\postgresql\\bin\\pg_dump.exe') ? 'C:\\laragon\\bin\\postgresql\\postgresql\\bin' : (file_exists('C:\\Program Files\\PostgreSQL\\18\\bin\\pg_dump.exe') ? 'C:\\Program Files\\PostgreSQL\\18\\bin' : ''))),
+                'use_single_transaction' => true,
+                'timeout' => 60 * 5,
+            ],
         ],
 
         'sqlsrv' => [
