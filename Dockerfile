@@ -7,7 +7,8 @@ RUN apk add --no-cache \
     curl \
     git \
     unzip \
-    bash
+    bash \
+    postgresql-client
 
 # Install PHP extensions using reliable installer
 COPY --from=mlocati/php-extension-installer /usr/bin/install-php-extensions /usr/local/bin/
@@ -20,7 +21,7 @@ RUN install-php-extensions \
     bcmath \
     opcache \
     pcntl \
-    redis
+    redis-6.1.0
 
 # Install Composer
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
