@@ -1,5 +1,28 @@
 <?php
 
+$defaultOrigins = [
+    'https://farmlinkcare.com',
+    'https://www.farmlinkcare.com',
+    'https://app.farmlinkcare.com',
+    'https://api.farmlinkcare.com',
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+];
+
+if ($frontendUrl = env('FRONTEND_URL')) {
+    $defaultOrigins[] = rtrim($frontendUrl, '/');
+}
+
+if ($appUrl = env('APP_URL')) {
+    $defaultOrigins[] = rtrim($appUrl, '/');
+}
+
+$envOrigins = env('CORS_ALLOWED_ORIGINS')
+    ? array_filter(array_map('trim', explode(',', env('CORS_ALLOWED_ORIGINS'))))
+    : [];
+
+$allowedOrigins = array_values(array_unique(array_merge($defaultOrigins, $envOrigins)));
+
 return [
 
     /*
@@ -15,21 +38,21 @@ return [
     |
     */
 
-    'paths' => ['api/*', 'sanctum/csrf-cookie'],
+    'paths' => ['api/*', 'sanctum/csrf-cookie', 'broadcasting/auth'],
 
     'allowed_methods' => ['*'],
 
-    'allowed_origins' => env('CORS_ALLOWED_ORIGINS')
-        ? array_filter(array_map('trim', explode(',', env('CORS_ALLOWED_ORIGINS'))))
-        : [rtrim(env('FRONTEND_URL', 'http://localhost:3000'), '/'), 'http://127.0.0.1:3000', 'http://localhost:3000'],
+    'allowed_origins' => $allowedOrigins,
 
-    'allowed_origins_patterns' => [],
+    'allowed_origins_patterns' => [
+        '#^https?://(.*\.)?farmlinkcare\.com(:\d+)?$#',
+    ],
 
     'allowed_headers' => ['*'],
 
     'exposed_headers' => [],
 
-    'max_age' => 0,
+    'max_age' => 86400,
 
     'supports_credentials' => true,
 
