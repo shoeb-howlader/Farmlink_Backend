@@ -74,6 +74,7 @@ class CallController extends ApiController
 
         $callerRole = $user->roles->first()?->name ?? ($user->role ?? 'farmer');
         $payload = [
+            'sender_id' => $user->id,
             'signal_type' => $validated['signal_type'],
             'call_type' => $validated['call_type'],
             'caller' => [
@@ -89,7 +90,7 @@ class CallController extends ApiController
         ];
 
         // Broadcast signal via Reverb
-        broadcast(new CallSignalSent($conversation->id, $payload))->toOthers();
+        broadcast(new CallSignalSent($conversation->id, $payload));
 
         return $this->successResponse([
             'signal_sent' => true,

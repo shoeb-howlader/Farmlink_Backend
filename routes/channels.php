@@ -13,7 +13,16 @@ Broadcast::channel('user.{id}', function ($user, $id) {
 });
 
 Broadcast::channel('support.inbox', function ($user) {
-    return $user->hasAnyRole(['admin', 'data_entry_operator']);
+    if (! $user) {
+        return false;
+    }
+
+    if (method_exists($user, 'hasAnyRole') && $user->hasAnyRole(['admin', 'data_entry_operator', 'deo'])) {
+        return true;
+    }
+
+    $role = $user->role ?? null;
+    return in_array($role, ['admin', 'data_entry_operator', 'deo'], true);
 });
 
 /**
@@ -64,10 +73,15 @@ Broadcast::channel('chat.{conversationId}', function ($user, $conversationId) {
 
     $canAccess = false;
 
+    $isStaff = (method_exists($user, 'hasAnyRole') && $user->hasAnyRole(['admin', 'data_entry_operator', 'deo']))
+        || in_array($user->role ?? null, ['admin', 'data_entry_operator', 'deo'], true);
+
     // Admins and DEOs can access any support conversation (shared inbox)
-    if ($conversation->type === 'support' && $user->hasAnyRole(['admin', 'data_entry_operator'])) {
+    if ($conversation->type === 'support' && $isStaff) {
         $canAccess = true;
     } elseif ($conversation->participants()->where('user_id', $user->id)->exists()) {
+        $canAccess = true;
+    } elseif ($conversation->created_by === $user->id) {
         $canAccess = true;
     } elseif ($conversation->type === 'practitioner' && $conversation->context_type === 'service_request') {
         // For practitioner conversations scoped to a service request
@@ -78,7 +92,7 @@ Broadcast::channel('chat.{conversationId}', function ($user, $conversationId) {
         )) {
             $canAccess = true;
         }
-    } elseif ($user->hasRole('admin')) {
+    } elseif ($isStaff) {
         // System administrators have full oversight
         $canAccess = true;
     }
