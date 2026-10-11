@@ -89,6 +89,11 @@ class CallController extends ApiController
             'conversation_type' => $conversation->type,
         ];
 
+        if (in_array($validated['signal_type'], ['initiate', 'end', 'reject'], true)) {
+            Cache::forget("call_claimed_{$id}");
+            Cache::forget("call_claim_lock_{$id}");
+        }
+
         \Illuminate\Support\Facades\Log::info("WebRTC sendSignal: conv {$id}, signal {$validated['signal_type']} from user {$user->id}");
 
         // Broadcast signal via Reverb
@@ -110,6 +115,14 @@ class CallController extends ApiController
 
         if (! $this->canAccessConversation($user, $conversation)) {
             return $this->forbiddenResponse('Access denied');
+        }
+
+        $isStaff = (method_exists($user, 'hasAnyRole') && $user->hasAnyRole(['admin', 'data_entry_operator', 'deo']))
+            || in_array($user->role ?? null, ['admin', 'data_entry_operator', 'deo'], true);
+
+        // Farmers or non-support direct calls do not compete with hunt-group locks
+        if (! $isStaff || $conversation->type !== 'support') {
+            return $this->successResponse(['claimed' => true], 'Direct call acknowledged');
         }
 
         $callType = $request->input('call_type', 'audio');
@@ -137,7 +150,7 @@ class CallController extends ApiController
                     'claimed_at' => now()->toIso8601String(),
                 ];
 
-                Cache::put($claimedKey, $claimData, 300); // 5 min TTL
+                Cache::put($claimedKey, $claimData, 60); // 60s TTL
 
                 // Broadcast claim event so all other staff screens stop ringing immediately
                 broadcast(new CallSignalSent($conversation->id, [
