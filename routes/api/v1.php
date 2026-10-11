@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\V1\Admin\ServiceRequestController as AdminServiceRe
 use App\Http\Controllers\Api\V1\Admin\StaffController as AdminStaffController;
 use App\Http\Controllers\Api\V1\Admin\VetConsultantRecordController as AdminVetConsultantRecordController;
 use App\Http\Controllers\Api\V1\AuthController;
+use App\Http\Controllers\Api\V1\CallController;
 use App\Http\Controllers\Api\V1\CannedResponseController;
 use App\Http\Controllers\Api\V1\ChatController;
 use App\Http\Controllers\Api\V1\ConsultantRecordController;
@@ -184,6 +185,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::patch('/chat/conversations/{id}/reopen', [ChatController::class, 'reopen'])->name('chat.conversations.reopen');
     Route::get('/chat/unread-count', [ChatController::class, 'unreadCount'])->name('chat.unread-count');
     Route::get('/chat/canned-responses', [CannedResponseController::class, 'index'])->name('chat.canned-responses.index');
+
+    // WebRTC Audio/Video Calling & Signaling (BDIX Coturn)
+    Route::get('/chat/turn-credentials', [CallController::class, 'getTurnCredentials'])->name('chat.call.turn');
+    Route::post('/chat/conversations/{id}/call/signal', [CallController::class, 'sendSignal'])->name('chat.call.signal');
+    Route::post('/chat/conversations/{id}/call/claim', [CallController::class, 'claimCall'])->name('chat.call.claim');
+    Route::post('/chat/conversations/{id}/call/end', [CallController::class, 'endCall'])->name('chat.call.end');
 
     // WebSocket Broadcasting Auth via Sanctum Bearer token
     \Illuminate\Support\Facades\Broadcast::routes(['middleware' => ['auth:sanctum']]);
