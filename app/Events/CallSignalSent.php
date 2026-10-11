@@ -46,23 +46,26 @@ class CallSignalSent implements ShouldBroadcastNow
             $channels[] = new PrivateChannel('support.inbox');
         }
 
-        // 2. Direct broadcast to all other conversation participants on user.{id}
+        // 2. Direct broadcast to all conversation participants & other devices of sender on user.{id}
         $participantIds = $conversation->participants()
-            ->where('user_id', '!=', $senderId)
             ->pluck('user_id')
             ->toArray();
 
-        if ($conversation->created_by && (int) $conversation->created_by !== (int) $senderId) {
+        if ($conversation->created_by) {
             $participantIds[] = (int) $conversation->created_by;
+        }
+
+        if ($senderId) {
+            $participantIds[] = (int) $senderId;
         }
 
         if ($conversation->context_type === 'service_request' && $conversation->context_id) {
             $sr = \App\Models\ServiceRequest::find($conversation->context_id);
             if ($sr) {
-                if ($sr->assigned_to && (int) $sr->assigned_to !== (int) $senderId) {
+                if ($sr->assigned_to) {
                     $participantIds[] = (int) $sr->assigned_to;
                 }
-                if ($sr->farmer_id && (int) $sr->farmer_id !== (int) $senderId) {
+                if ($sr->farmer_id) {
                     $participantIds[] = (int) $sr->farmer_id;
                 }
             }
