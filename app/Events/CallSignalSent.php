@@ -34,13 +34,43 @@ class CallSignalSent implements ShouldBroadcastNow
             new PrivateChannel('chat.' . $this->conversationId),
         ];
 
-        // For incoming calls in support chats, also notify the support inbox channel
-        // so all online staff receive the ring banner immediately.
+        $conversation = Conversation::find($this->conversationId);
+        if (! $conversation) {
+            return $channels;
+        }
+
         $signalType = $this->payload['signal_type'] ?? '';
-        if ($signalType === 'initiate' || $signalType === 'ring') {
-            $conversation = Conversation::find($this->conversationId);
-            if ($conversation && $conversation->type === 'support') {
-                $channels[] = new PrivateChannel('support.inbox');
+        $senderId = $this->payload['sender_id'] ?? null;
+
+        if ($conversation->type === 'support') {
+            // Support hunt-group: broadcast to support.inbox for initiate/ring/claim/end/reject
+            $channels[] = new PrivateChannel('support.inbox');
+
+            // If a staff member is calling the farmer, broadcast to the farmer's user channel
+            $farmer = $conversation->users()->whereDoesntHave('roles', function ($q) {
+                $q->whereIn('name', ['admin', 'data_entry_operator']);
+            })->first() ?? $conversation->creator;
+
+            if ($farmer && (int) $farmer->id !== (int) $senderId) {
+                $channels[] = new PrivateChannel('user.' . $farmer->id);
+            }
+        } elseif ($conversation->type === 'practitioner') {
+            // Find other participant
+            $otherParticipant = $conversation->participants()
+                ->where('user_id', '!=', $senderId)
+                ->first();
+
+            $recipientId = $otherParticipant?->user_id;
+
+            if (! $recipientId && $conversation->context_type === 'service_request') {
+                $sr = \App\Models\ServiceRequest::find($conversation->context_id);
+                if ($sr && $senderId) {
+                    $recipientId = ((int) $sr->farmer_id === (int) $senderId) ? $sr->assigned_to : $sr->farmer_id;
+                }
+            }
+
+            if ($recipientId) {
+                $channels[] = new PrivateChannel('user.' . $recipientId);
             }
         }
 
