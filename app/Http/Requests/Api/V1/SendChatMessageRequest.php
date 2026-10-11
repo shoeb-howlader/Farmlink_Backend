@@ -20,16 +20,16 @@ class SendChatMessageRequest extends FormRequest
     {
         return [
             'body' => ['required_without:attachment', 'nullable', 'string', 'max:5000'],
-            'attachment' => ['nullable', 'file', 'image', 'mimes:jpeg,png,jpg,webp', 'max:5120'],
+            'attachment' => ['nullable', 'file', 'mimes:jpeg,png,jpg,webp,pdf', 'max:10240'],
         ];
     }
 
     public function messages(): array
     {
         return [
-            'body.required_without' => 'Please provide a message or attach an image.',
-            'attachment.image' => 'The attachment must be an image file (JPG, PNG, WebP).',
-            'attachment.max' => 'The attachment size may not exceed 5MB.',
+            'body.required_without' => 'Please provide a message or attach an image or PDF.',
+            'attachment.mimes' => 'The attachment must be an image (JPG, PNG, WebP) or a PDF document.',
+            'attachment.max' => 'The attachment size may not exceed 10MB.',
         ];
     }
 }

@@ -23,7 +23,7 @@ class StoreConversationRequest extends FormRequest
             'context_type' => ['nullable', 'string', 'in:order,service_request'],
             'context_id' => ['nullable', 'integer'],
             'message' => ['nullable', 'string', 'max:5000'],
-            'attachment' => ['nullable', 'file', 'image', 'mimes:jpeg,png,jpg,webp', 'max:5120'],
+            'attachment' => ['nullable', 'file', 'mimes:jpeg,png,jpg,webp,pdf', 'max:10240'],
         ];
     }
 }

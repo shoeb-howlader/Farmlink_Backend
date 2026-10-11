@@ -25,6 +25,7 @@ class Message extends Model
 
     protected $appends = [
         'attachment_url',
+        'is_pdf',
     ];
 
     public function conversation(): BelongsTo
@@ -62,5 +63,14 @@ class Message extends Model
         }
 
         return Storage::disk('public')->url($this->attachment_path);
+    }
+
+    public function getIsPdfAttribute(): bool
+    {
+        if (! $this->attachment_path) {
+            return false;
+        }
+
+        return strtolower(pathinfo($this->attachment_path, PATHINFO_EXTENSION)) === 'pdf';
     }
 }

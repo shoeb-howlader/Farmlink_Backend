@@ -229,6 +229,33 @@ class ChatModuleTest extends TestCase
         Storage::disk('public')->assertExists($attachmentPath);
     }
 
+    public function test_farmer_can_send_message_with_pdf_attachment(): void
+    {
+        Sanctum::actingAs($this->farmer);
+        Storage::fake('public');
+
+        $conv = Conversation::create([
+            'type' => 'support',
+            'created_by' => $this->farmer->id,
+            'status' => 'open',
+        ]);
+
+        $pdf = UploadedFile::fake()->create('water_test_report.pdf', 1500, 'application/pdf');
+
+        $response = $this->postJson("/api/v1/chat/conversations/{$conv->id}/messages", [
+            'body' => 'Here is my water quality lab report PDF.',
+            'attachment' => $pdf,
+        ]);
+
+        $response->assertStatus(201)
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.message.is_pdf', true);
+
+        $attachmentPath = $response->json('data.message.attachment_path');
+        Storage::disk('public')->assertExists($attachmentPath);
+        $this->assertStringEndsWith('.pdf', $attachmentPath);
+    }
+
     public function test_admin_and_deo_can_view_support_inbox_and_reply(): void
     {
         // Farmer starts support conversation
