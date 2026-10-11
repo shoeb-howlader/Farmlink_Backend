@@ -55,6 +55,7 @@ Route::get('/products', [ProductController::class, 'index'])->name('products.ind
 Route::get('/products/{product}', [ProductController::class, 'show'])->name('products.show');
 Route::get('/products/{product}/reviews', [\App\Http\Controllers\Api\V1\ProductReviewController::class, 'index'])->name('products.reviews.index');
 Route::get('/weather', [\App\Http\Controllers\Api\V1\WeatherController::class, 'getWeather'])->name('weather.get');
+Route::get('/chat/attachments/stream', [ChatController::class, 'streamAttachment'])->name('chat.attachments.stream');
 
 // Phone OTP verification (public or authenticated)
 Route::post('/auth/otp/verify', [OtpController::class, 'verify'])->name('auth.otp.verify');

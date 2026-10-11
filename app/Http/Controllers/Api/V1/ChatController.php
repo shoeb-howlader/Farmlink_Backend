@@ -635,4 +635,39 @@ class ChatController extends ApiController
     {
         // Intentionally excluded from general notification bell to avoid duplicate clutter.
     }
+
+    /**
+     * Stream a chat attachment file with permissive CORS headers for in-modal preview and download.
+     */
+    public function streamAttachment(Request $request): mixed
+    {
+        $path = $request->query('path');
+        if (! $path) {
+            abort(400, 'Missing attachment path');
+        }
+
+        // Clean and normalize path, preventing directory traversal
+        $cleanPath = ltrim(str_replace(['../', '..\\'], '', $path), '/');
+        if (str_contains($cleanPath, 'storage/')) {
+            $cleanPath = substr($cleanPath, strpos($cleanPath, 'storage/') + 8);
+        }
+
+        $disk = \Illuminate\Support\Facades\Storage::disk('public');
+        if (! $disk->exists($cleanPath)) {
+            abort(404, 'Attachment file not found');
+        }
+
+        $mimeType = $disk->mimeType($cleanPath) ?: 'application/octet-stream';
+        $fileName = basename($cleanPath);
+        $fullPath = $disk->path($cleanPath);
+
+        return response()->file($fullPath, [
+            'Content-Type' => $mimeType,
+            'Content-Disposition' => 'inline; filename="' . $fileName . '"',
+            'Access-Control-Allow-Origin' => '*',
+            'Access-Control-Allow-Methods' => 'GET, HEAD, OPTIONS',
+            'Access-Control-Expose-Headers' => 'Content-Disposition, Content-Length',
+            'Cache-Control' => 'public, max-age=86400',
+        ]);
+    }
 }
