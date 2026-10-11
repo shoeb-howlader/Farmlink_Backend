@@ -48,15 +48,15 @@ class Message extends Model
         }
 
         $relativePath = ltrim($this->attachment_path, '/');
-        $appUrl = config('app.url');
 
-        // If in production or APP_URL is unconfigured/localhost, construct robust full URL
-        if (app()->environment('production') || ! $appUrl || str_contains($appUrl, 'localhost') || str_contains($appUrl, '127.0.0.1')) {
-            if (request()?->getSchemeAndHttpHost() && ! str_contains(request()->getSchemeAndHttpHost(), 'localhost') && ! str_contains(request()->getSchemeAndHttpHost(), '127.0.0.1')) {
-                return rtrim(request()->getSchemeAndHttpHost(), '/') . '/storage/' . $relativePath;
-            }
+        // Only in production: ensure we don't accidentally emit localhost URLs if APP_URL is misconfigured
+        if (app()->environment('production')) {
+            $appUrl = config('app.url');
             if ($appUrl && ! str_contains($appUrl, 'localhost') && ! str_contains($appUrl, '127.0.0.1')) {
                 return rtrim($appUrl, '/') . '/storage/' . $relativePath;
+            }
+            if (request()?->getSchemeAndHttpHost() && ! str_contains(request()->getSchemeAndHttpHost(), 'localhost') && ! str_contains(request()->getSchemeAndHttpHost(), '127.0.0.1')) {
+                return rtrim(request()->getSchemeAndHttpHost(), '/') . '/storage/' . $relativePath;
             }
             return 'https://api.farmlinkcare.com/storage/' . $relativePath;
         }
