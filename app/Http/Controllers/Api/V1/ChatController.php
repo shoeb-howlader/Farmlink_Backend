@@ -27,7 +27,7 @@ class ChatController extends ApiController
         $user = $request->user();
         $isAdmin = $user->hasRole('admin');
         $isStaff = $user->hasAnyRole(['admin', 'data_entry_operator']);
-        $isInboxMode = $request->boolean('inbox') || ($isStaff && $request->query('view') === 'inbox');
+        $isInboxMode = $request->routeIs('*support-inbox*') || (bool) $request->route('inbox') || $request->boolean('inbox') || ($isStaff && $request->query('view') === 'inbox');
 
         $query = Conversation::query()
             ->with(['creator', 'users', 'latestMessage.sender']);
@@ -36,8 +36,13 @@ class ChatController extends ApiController
             // Admin / DEO Support Inbox
             if ($isAdmin) {
                 // Admin can filter by type: all, support, or practitioner (vet/consultancy)
-                if ($request->filled('type') && $request->query('type') !== 'all') {
-                    $query->where('type', $request->query('type'));
+                if ($request->filled('type')) {
+                    if ($request->query('type') !== 'all') {
+                        $query->where('type', $request->query('type'));
+                    }
+                } else {
+                    // Default view for Support Inbox is support tickets only
+                    $query->where('type', 'support');
                 }
             } else {
                 // Non-admin DEO staff only sees support
@@ -275,13 +280,25 @@ class ChatController extends ApiController
                 ]);
             }
         } elseif ($type === 'practitioner') {
-            if ($contextType !== 'service_request' || ! $contextId) {
-                return $this->errorResponse('A practitioner conversation must be linked to a valid service request.', 422);
+            $serviceRequest = null;
+            if ($contextId) {
+                $serviceRequest = ServiceRequest::with(['farmer', 'assignedPractitioner'])->find($contextId);
+            } else {
+                // Auto-resolve latest active assigned consultation request for this user
+                $srQuery = ServiceRequest::with(['farmer', 'assignedPractitioner'])
+                    ->where('farmer_id', $user->id)
+                    ->whereIn('status', ['assigned', 'in_progress', 'completed'])
+                    ->whereNotNull('assigned_to');
+
+                if ($request->filled('service_type')) {
+                    $srQuery->where('type', $request->input('service_type'));
+                }
+
+                $serviceRequest = $srQuery->latest('id')->first();
             }
 
-            $serviceRequest = ServiceRequest::with(['farmer', 'assignedPractitioner'])->find($contextId);
             if (! $serviceRequest) {
-                return $this->notFoundResponse('Service request not found.');
+                return $this->errorResponse('No active consultation request found with an assigned specialist. Please request a consultant or doctor visit first.', 422);
             }
 
             // Enforce requirement: only available once assigned, and remains available through completed

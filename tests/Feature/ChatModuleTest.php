@@ -691,4 +691,82 @@ class ChatModuleTest extends TestCase
         $this->assertTrue($conv->participants()->where('user_id', $this->vet->id)->exists());
         $this->assertEquals('Hello Doctor, please review pending consultation cases.', $conv->latestMessage->body);
     }
+
+    public function test_farmer_can_start_practitioner_conversation_by_service_type_auto_resolving_request(): void
+    {
+        $consultant = User::factory()->create(['name' => 'Aquaculture Consultant']);
+        $consultant->assignRole('consultant');
+
+        $sr = ServiceRequest::factory()->create([
+            'farm_id' => $this->farm->id,
+            'farmer_id' => $this->farmer->id,
+            'type' => 'consultant',
+            'status' => 'assigned',
+            'assigned_to' => $consultant->id,
+        ]);
+
+        Sanctum::actingAs($this->farmer);
+
+        $response = $this->postJson('/api/v1/chat/conversations', [
+            'type' => 'practitioner',
+            'service_type' => 'consultant',
+            'message' => 'Hello Consultant, our pond salinity is dropping fast.',
+        ]);
+
+        $response->assertStatus(201)
+            ->assertJsonPath('data.conversation.type', 'practitioner')
+            ->assertJsonPath('data.conversation.context_type', 'service_request')
+            ->assertJsonPath('data.conversation.context_id', $sr->id);
+
+        $convId = $response->json('data.conversation_id');
+        $conv = Conversation::find($convId);
+        $this->assertEquals('practitioner', $conv->type);
+        $this->assertTrue($conv->participants()->where('user_id', $this->farmer->id)->exists());
+        $this->assertTrue($conv->participants()->where('user_id', $consultant->id)->exists());
+    }
+
+    public function test_admin_support_inbox_defaults_to_support_type_and_excludes_consultations(): void
+    {
+        // 1. Create a support ticket
+        $supportConv = Conversation::create([
+            'type' => 'support',
+            'status' => 'open',
+            'created_by' => $this->farmer->id,
+        ]);
+
+        // 2. Create a practitioner consultation thread
+        $consultant = User::factory()->create(['name' => 'Advisory Consultant']);
+        $consultant->assignRole('consultant');
+        $sr = ServiceRequest::factory()->create([
+            'farm_id' => $this->farm->id,
+            'farmer_id' => $this->farmer->id,
+            'type' => 'consultant',
+            'status' => 'assigned',
+            'assigned_to' => $consultant->id,
+        ]);
+        $pracConv = Conversation::create([
+            'type' => 'practitioner',
+            'context_type' => 'service_request',
+            'context_id' => $sr->id,
+            'status' => 'open',
+            'created_by' => $this->farmer->id,
+        ]);
+
+        Sanctum::actingAs($this->admin);
+
+        // Default query to support inbox without type param should ONLY return support conversations
+        $response = $this->getJson('/api/v1/admin/support-inbox');
+        $response->assertStatus(200);
+
+        $convIds = collect($response->json('data.conversations'))->pluck('id')->all();
+        $this->assertContains($supportConv->id, $convIds);
+        $this->assertNotContains($pracConv->id, $convIds);
+
+        // Explicit query with type=all returns both
+        $responseAll = $this->getJson('/api/v1/admin/support-inbox?type=all');
+        $responseAll->assertStatus(200);
+        $allIds = collect($responseAll->json('data.conversations'))->pluck('id')->all();
+        $this->assertContains($supportConv->id, $allIds);
+        $this->assertContains($pracConv->id, $allIds);
+    }
 }

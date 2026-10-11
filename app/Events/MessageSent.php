@@ -62,6 +62,14 @@ class MessageSent implements ShouldBroadcastNow
                 if ($recipientId) {
                     $channels[] = new PrivateChannel('user.' . $recipientId);
                 }
+            } elseif ($conversation->type === 'direct') {
+                $otherParticipant = $conversation->participants()
+                    ->where('user_id', '!=', $this->message->sender_id)
+                    ->first();
+
+                if ($otherParticipant?->user_id) {
+                    $channels[] = new PrivateChannel('user.' . $otherParticipant->user_id);
+                }
             }
         }
 

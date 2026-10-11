@@ -29,6 +29,7 @@ class StoreConversationRequest extends FormRequest
     {
         return [
             'type' => ['required', 'string', 'in:support,practitioner,direct'],
+            'service_type' => ['nullable', 'string', 'in:consultant,vet'],
             'target_user_id' => ['required_if:type,direct', 'nullable', 'integer', 'exists:users,id'],
             'context_type' => ['nullable', 'string', 'in:order,service_request'],
             'context_id' => ['nullable', 'integer'],
