@@ -330,6 +330,56 @@ class ChatController extends ApiController
                     'user_id' => $serviceRequest->assigned_to,
                 ], ['last_read_at' => $isPractitioner ? now() : null]);
             }
+        } elseif ($type === 'direct') {
+            $targetUserId = (int) ($validated['target_user_id'] ?? 0);
+            if ($targetUserId === (int) $user->id) {
+                return $this->errorResponse('Cannot start a direct conversation with yourself.', 422);
+            }
+
+            $targetUser = \App\Models\User::find($targetUserId);
+            if (! $targetUser) {
+                return $this->notFoundResponse('Target user not found.');
+            }
+
+            // Find existing direct conversation between $user and $targetUser
+            $existing = Conversation::where('type', 'direct')
+                ->whereHas('participants', function ($q) use ($user) {
+                    $q->where('user_id', $user->id);
+                })
+                ->whereHas('participants', function ($q) use ($targetUserId) {
+                    $q->where('user_id', $targetUserId);
+                })
+                ->first();
+
+            if ($existing) {
+                $conversation = $existing;
+                if ($conversation->status === 'closed') {
+                    $conversation->update(['status' => 'open']);
+                }
+            } else {
+                $conversation = Conversation::create([
+                    'type' => 'direct',
+                    'context_type' => null,
+                    'context_id' => null,
+                    'status' => 'open',
+                    'created_by' => $user->id,
+                    'last_message_at' => now(),
+                ]);
+
+                ConversationParticipant::firstOrCreate([
+                    'conversation_id' => $conversation->id,
+                    'user_id' => $user->id,
+                ], ['last_read_at' => now()]);
+
+                ConversationParticipant::firstOrCreate([
+                    'conversation_id' => $conversation->id,
+                    'user_id' => $targetUserId,
+                ], ['last_read_at' => null]);
+            }
+        }
+
+        if (! $conversation) {
+            return $this->errorResponse('Failed to initialize conversation.', 500);
         }
 
         // If an initial message was passed, create and dispatch it
@@ -509,12 +559,19 @@ class ChatController extends ApiController
         $isStaff = $user->hasAnyRole(['admin', 'data_entry_operator']);
 
         if ($isStaff) {
-            // For staff, count unread support conversations where last message is unread
+            // For staff, count unread support conversations and their direct conversations
             $openSupportIds = Conversation::where('type', 'support')
                 ->where('status', 'open')
                 ->pluck('id');
 
-            $unreadCount = Message::whereIn('conversation_id', $openSupportIds)
+            $directIds = Conversation::where('type', 'direct')
+                ->where('status', 'open')
+                ->whereHas('participants', fn ($pq) => $pq->where('user_id', $user->id))
+                ->pluck('id');
+
+            $relevantIds = $openSupportIds->merge($directIds)->unique();
+
+            $unreadCount = Message::whereIn('conversation_id', $relevantIds)
                 ->where('sender_id', '!=', $user->id)
                 ->whereNull('read_at')
                 ->count();

@@ -36,6 +36,8 @@ Broadcast::channel('online', function ($user) {
         return [
             'id' => (int) $user->id,
             'name' => $user->name,
+            'phone' => $user->phone,
+            'avatar' => $user->avatar_url ?? null,
             'role' => $role,
             'is_staff' => $isStaff,
         ];

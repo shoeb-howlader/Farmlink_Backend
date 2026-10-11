@@ -8,7 +8,16 @@ class StoreConversationRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return $this->user() !== null;
+        $user = $this->user();
+        if (! $user) {
+            return false;
+        }
+
+        if ($this->input('type') === 'direct') {
+            return $user->hasAnyRole(['admin', 'data_entry_operator', 'deo']);
+        }
+
+        return true;
     }
 
     /**
@@ -19,7 +28,8 @@ class StoreConversationRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'type' => ['required', 'string', 'in:support,practitioner'],
+            'type' => ['required', 'string', 'in:support,practitioner,direct'],
+            'target_user_id' => ['required_if:type,direct', 'nullable', 'integer', 'exists:users,id'],
             'context_type' => ['nullable', 'string', 'in:order,service_request'],
             'context_id' => ['nullable', 'integer'],
             'message' => ['nullable', 'string', 'max:5000'],

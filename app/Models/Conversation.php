@@ -74,6 +74,10 @@ class Conversation extends Model
      */
     public function getContextLabel(): ?string
     {
+        if ($this->type === 'direct') {
+            return 'Direct Message';
+        }
+
         if (! $this->context_type || ! $this->context_id) {
             return null;
         }
@@ -98,6 +102,46 @@ class Conversation extends Model
     public function getDisplayParty(User $viewer): array
     {
         $isStaff = $viewer->hasAnyRole(['admin', 'data_entry_operator']);
+
+        if ($this->type === 'direct') {
+            $participants = $this->users()->get();
+            $otherUser = $participants->firstWhere('id', '!=', $viewer->id);
+
+            if (! $otherUser && $participants->count() >= 2) {
+                $u1 = $participants[0];
+                $u2 = $participants[1];
+                return [
+                    'id' => $u1->id,
+                    'name' => "{$u1->name} ↔ {$u2->name}",
+                    'phone' => $u1->phone,
+                    'role' => 'direct',
+                    'role_label' => 'Direct Message',
+                    'avatar' => $u1->avatar_url ?? null,
+                ];
+            }
+
+            $target = $otherUser ?? ($this->created_by !== $viewer->id ? $this->creator : null) ?? $participants->first();
+            if ($target) {
+                $roleName = $target->roles->first()?->name ?? ($target->role ?? 'user');
+                $formattedRole = match ($roleName) {
+                    'admin' => 'Administrator',
+                    'data_entry_operator', 'deo' => 'DEO Staff',
+                    'veterinary_doctor' => 'Veterinary Doctor',
+                    'consultant' => 'Aquaculture Consultant',
+                    'farmer' => 'Farmer',
+                    default => ucfirst(str_replace('_', ' ', $roleName)),
+                };
+
+                return [
+                    'id' => $target->id,
+                    'name' => $target->name,
+                    'phone' => $target->phone,
+                    'role' => $roleName,
+                    'role_label' => $formattedRole,
+                    'avatar' => $target->avatar_url ?? null,
+                ];
+            }
+        }
 
         if ($this->type === 'support') {
             if ($isStaff) {

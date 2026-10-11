@@ -660,4 +660,35 @@ class ChatModuleTest extends TestCase
         // Admin is added to conversation participants
         $this->assertTrue($conv->participants()->where('user_id', $this->admin->id)->exists());
     }
+
+    public function test_admin_can_start_direct_conversation_with_any_user(): void
+    {
+        Sanctum::actingAs($this->admin);
+
+        // Start direct conversation with vet
+        $response = $this->postJson('/api/v1/chat/conversations', [
+            'type' => 'direct',
+            'target_user_id' => $this->vet->id,
+            'message' => 'Hello Doctor, please review pending consultation cases.',
+        ]);
+
+        $response->assertStatus(201)
+            ->assertJson([
+                'success' => true,
+                'data' => [
+                    'conversation' => [
+                        'type' => 'direct',
+                    ],
+                ],
+            ]);
+
+        $convId = $response->json('data.conversation_id');
+        $this->assertNotNull($convId);
+
+        $conv = Conversation::find($convId);
+        $this->assertEquals('direct', $conv->type);
+        $this->assertTrue($conv->participants()->where('user_id', $this->admin->id)->exists());
+        $this->assertTrue($conv->participants()->where('user_id', $this->vet->id)->exists());
+        $this->assertEquals('Hello Doctor, please review pending consultation cases.', $conv->latestMessage->body);
+    }
 }
