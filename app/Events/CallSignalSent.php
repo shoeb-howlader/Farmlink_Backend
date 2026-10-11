@@ -39,39 +39,37 @@ class CallSignalSent implements ShouldBroadcastNow
             return $channels;
         }
 
-        $signalType = $this->payload['signal_type'] ?? '';
         $senderId = $this->payload['sender_id'] ?? null;
 
+        // 1. If support conversation, always broadcast to support hunt-group
         if ($conversation->type === 'support') {
-            // Support hunt-group: broadcast to support.inbox for initiate/ring/claim/end/reject
             $channels[] = new PrivateChannel('support.inbox');
+        }
 
-            // If a staff member is calling the farmer, broadcast to the farmer's user channel
-            $farmer = $conversation->users()->whereDoesntHave('roles', function ($q) {
-                $q->whereIn('name', ['admin', 'data_entry_operator']);
-            })->first() ?? $conversation->creator;
+        // 2. Direct broadcast to all other conversation participants on user.{id}
+        $participantIds = $conversation->participants()
+            ->where('user_id', '!=', $senderId)
+            ->pluck('user_id')
+            ->toArray();
 
-            if ($farmer && (int) $farmer->id !== (int) $senderId) {
-                $channels[] = new PrivateChannel('user.' . $farmer->id);
-            }
-        } elseif ($conversation->type === 'practitioner') {
-            // Find other participant
-            $otherParticipant = $conversation->participants()
-                ->where('user_id', '!=', $senderId)
-                ->first();
+        if ($conversation->created_by && (int) $conversation->created_by !== (int) $senderId) {
+            $participantIds[] = (int) $conversation->created_by;
+        }
 
-            $recipientId = $otherParticipant?->user_id;
-
-            if (! $recipientId && $conversation->context_type === 'service_request') {
-                $sr = \App\Models\ServiceRequest::find($conversation->context_id);
-                if ($sr && $senderId) {
-                    $recipientId = ((int) $sr->farmer_id === (int) $senderId) ? $sr->assigned_to : $sr->farmer_id;
+        if ($conversation->context_type === 'service_request' && $conversation->context_id) {
+            $sr = \App\Models\ServiceRequest::find($conversation->context_id);
+            if ($sr) {
+                if ($sr->assigned_to && (int) $sr->assigned_to !== (int) $senderId) {
+                    $participantIds[] = (int) $sr->assigned_to;
+                }
+                if ($sr->farmer_id && (int) $sr->farmer_id !== (int) $senderId) {
+                    $participantIds[] = (int) $sr->farmer_id;
                 }
             }
+        }
 
-            if ($recipientId) {
-                $channels[] = new PrivateChannel('user.' . $recipientId);
-            }
+        foreach (array_unique($participantIds) as $pid) {
+            $channels[] = new PrivateChannel('user.' . $pid);
         }
 
         return $channels;

@@ -89,6 +89,8 @@ class CallController extends ApiController
             'conversation_type' => $conversation->type,
         ];
 
+        \Illuminate\Support\Facades\Log::info("WebRTC sendSignal: conv {$id}, signal {$validated['signal_type']} from user {$user->id}");
+
         // Broadcast signal via Reverb
         broadcast(new CallSignalSent($conversation->id, $payload));
 
