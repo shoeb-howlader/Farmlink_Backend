@@ -299,6 +299,9 @@ test('my follow-ups returns grouped entries with 80+ records spanning Overdue, T
     $farmKhulna = Farm::factory()->create(['user_id' => $farmer->id, 'district' => 'Khulna']);
     $farmSatkhira = Farm::factory()->create(['user_id' => $farmer->id, 'district' => 'Satkhira']);
 
+    // Freeze test now on a Wednesday so 'this_week' contains weekdays before endOfWeek
+    \Illuminate\Support\Carbon::setTestNow('2026-10-14 10:00:00');
+
     $today = now()->startOfDay();
     $endOfWeek = now()->endOfWeek()->startOfDay();
 
@@ -397,6 +400,8 @@ test('my follow-ups returns grouped entries with 80+ records spanning Overdue, T
     $countResponse = $this->getJson('/api/v1/my/follow-ups/count');
     $countResponse->assertOk();
     expect($countResponse->json('data.overdue_and_today_count'))->toBe(25);
+
+    \Illuminate\Support\Carbon::setTestNow();
 });
 
 test('admin reschedule requests queue and count endpoints work', function () {
