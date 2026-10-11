@@ -49,7 +49,7 @@ class ReportController extends ApiController
                 $q->whereBetween('created_at', [$datetimeStart, $datetimeEnd])
                     ->whereNotIn('status', $excludedStatuses);
             })
-            ->with('product:id,name,sku,price')
+            ->with('product:id,name,price')
             ->groupBy('product_id')
             ->orderByDesc('total_qty')
             ->limit(5)
@@ -58,7 +58,7 @@ class ReportController extends ApiController
                 return [
                     'product_id' => $item->product_id,
                     'name' => $item->product?->name ?? 'Unknown Product',
-                    'sku' => $item->product?->sku ?? '-',
+                    'sku' => 'PRD-' . str_pad((string) $item->product_id, 4, '0', STR_PAD_LEFT),
                     'total_quantity' => (int) $item->total_qty,
                     'total_sales' => (float) $item->total_sales,
                 ];
@@ -137,7 +137,7 @@ class ReportController extends ApiController
         $totalFarmers = (clone $farmersQuery)->count();
         $activeFarmers = (clone $farmersQuery)->where('is_active', true)->count();
         $totalFarms = Farm::count();
-        $totalAnimals = Farm::sum('animals_count');
+        $totalAnimals = Farm::sum('pond_count');
 
         $districtBreakdown = (clone $farmersQuery)
             ->select('district', DB::raw('count(*) as count'))
@@ -190,7 +190,7 @@ class ReportController extends ApiController
                             $farmer->email ?? '',
                             $farmer->district ?? '',
                             $farmer->farms->count(),
-                            $farmer->farms->sum('animals_count'),
+                            $farmer->farms->sum('pond_count'),
                             ($farmer->is_active ?? true) ? 'Active' : 'Inactive',
                             $farmer->created_at?->toDateTimeString(),
                         ]);
