@@ -70,6 +70,7 @@ class CallController extends ApiController
             'sdp' => ['nullable'],
             'candidate' => ['nullable'],
             'recipient_id' => ['nullable', 'integer'],
+            'client_id' => ['nullable', 'string', 'max:100'],
         ]);
 
         $callerRole = $user->roles->first()?->name ?? ($user->role ?? 'farmer');
@@ -83,6 +84,7 @@ class CallController extends ApiController
             'sender_id' => $user->id,
             'signal_type' => $validated['signal_type'],
             'call_type' => $validated['call_type'],
+            'client_id' => $validated['client_id'] ?? null,
             'caller' => [
                 'id' => $user->id,
                 'name' => $user->name,
@@ -126,12 +128,26 @@ class CallController extends ApiController
         $isStaff = (method_exists($user, 'hasAnyRole') && $user->hasAnyRole(['admin', 'data_entry_operator', 'deo']))
             || in_array($user->role ?? null, ['admin', 'data_entry_operator', 'deo'], true);
 
-        // Farmers or non-support direct calls do not compete with hunt-group locks
+        $callType = $request->input('call_type', 'audio');
+        $clientId = $request->input('client_id');
+
+        // Farmers or non-support direct calls do not compete with hunt-group locks,
+        // but broadcast the claim event so other active devices for this user dismiss ringing.
         if (! $isStaff || $conversation->type !== 'support') {
+            broadcast(new CallSignalSent($conversation->id, [
+                'signal_type' => 'claim',
+                'claimed_by' => [
+                    'staff_id' => $user->id,
+                    'name' => $user->name,
+                    'role' => $user->roles->first()?->name ?? ($user->role ?? 'farmer'),
+                    'client_id' => $clientId,
+                ],
+                'call_type' => $callType,
+            ]));
+
             return $this->successResponse(['claimed' => true], 'Direct call acknowledged');
         }
 
-        $callType = $request->input('call_type', 'audio');
         $lockKey = "call_claim_lock_{$id}";
         $claimedKey = "call_claimed_{$id}";
 
@@ -153,12 +169,13 @@ class CallController extends ApiController
                     'staff_id' => $user->id,
                     'name' => $user->name,
                     'role' => $staffRole,
+                    'client_id' => $clientId,
                     'claimed_at' => now()->toIso8601String(),
                 ];
 
                 Cache::put($claimedKey, $claimData, 60); // 60s TTL
 
-                // Broadcast claim event so all other staff screens stop ringing immediately
+                // Broadcast claim event so all other staff & devices stop ringing immediately
                 broadcast(new CallSignalSent($conversation->id, [
                     'signal_type' => 'claim',
                     'claimed_by' => $claimData,
