@@ -73,6 +73,12 @@ class CallController extends ApiController
         ]);
 
         $callerRole = $user->roles->first()?->name ?? ($user->role ?? 'farmer');
+        $sdp = $validated['sdp'] ?? null;
+        if (is_array($sdp) && isset($sdp['sdp']) && is_string($sdp['sdp'])) {
+            $lines = preg_split('/\r\n|\r|\n/', trim($sdp['sdp']));
+            $sdp['sdp'] = implode("\r\n", $lines) . "\r\n";
+        }
+
         $payload = [
             'sender_id' => $user->id,
             'signal_type' => $validated['signal_type'],
@@ -84,7 +90,7 @@ class CallController extends ApiController
                 'avatar' => $user->avatar_url ?? null,
             ],
             'recipient_id' => $validated['recipient_id'] ?? null,
-            'sdp' => $validated['sdp'] ?? null,
+            'sdp' => $sdp,
             'candidate' => $validated['candidate'] ?? null,
             'conversation_type' => $conversation->type,
         ];
