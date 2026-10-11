@@ -132,7 +132,7 @@ class Conversation extends Model
             if ($isPractitioner) {
                 // Viewer is practitioner -> other party is the farmer
                 $farmer = $this->users()->whereDoesntHave('roles', function ($q) {
-                    $q->whereIn('name', ['veterinary_doctor', 'consultant', 'admin']);
+                    $q->whereIn('name', ['veterinary_doctor', 'consultant', 'admin', 'data_entry_operator']);
                 })->first() ?? $this->creator;
 
                 return [
@@ -144,7 +144,7 @@ class Conversation extends Model
                 ];
             }
 
-            // Viewer is farmer -> other party is the practitioner
+            // Find practitioner
             $practitioner = $this->users()->whereHas('roles', function ($q) {
                 $q->whereIn('name', ['veterinary_doctor', 'consultant']);
             })->first();
@@ -161,6 +161,28 @@ class Conversation extends Model
                 default => 'Practitioner',
             };
 
+            // If viewer is Admin/DEO staff:
+            if ($isStaff) {
+                $farmer = $this->users()->whereDoesntHave('roles', function ($q) {
+                    $q->whereIn('name', ['veterinary_doctor', 'consultant', 'admin', 'data_entry_operator']);
+                })->first() ?? $this->creator;
+
+                $pName = $practitioner?->name ?? 'Specialist';
+                $fName = $farmer?->name ?? 'Farmer';
+
+                return [
+                    'id' => $farmer?->id,
+                    'name' => "{$fName} ↔ {$pName}",
+                    'phone' => $farmer?->phone,
+                    'role' => $roleName,
+                    'role_label' => "{$formattedRole} Consultation",
+                    'avatar' => $farmer?->avatar_url ?? $practitioner?->avatar_url ?? null,
+                    'farmer_name' => $fName,
+                    'practitioner_name' => $pName,
+                ];
+            }
+
+            // Viewer is farmer -> other party is the practitioner
             return [
                 'id' => $practitioner?->id,
                 'name' => $practitioner?->name ?? 'Assigned Practitioner',

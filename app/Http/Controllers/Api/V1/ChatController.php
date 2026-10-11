@@ -25,6 +25,7 @@ class ChatController extends ApiController
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
+        $isAdmin = $user->hasRole('admin');
         $isStaff = $user->hasAnyRole(['admin', 'data_entry_operator']);
         $isInboxMode = $request->boolean('inbox') || ($isStaff && $request->query('view') === 'inbox');
 
@@ -32,8 +33,16 @@ class ChatController extends ApiController
             ->with(['creator', 'users', 'latestMessage.sender']);
 
         if ($isInboxMode) {
-            // Admin/DEO shared support inbox
-            $query->where('type', 'support');
+            // Admin / DEO Support Inbox
+            if ($isAdmin) {
+                // Admin can filter by type: all, support, or practitioner (vet/consultancy)
+                if ($request->filled('type') && $request->query('type') !== 'all') {
+                    $query->where('type', $request->query('type'));
+                }
+            } else {
+                // Non-admin DEO staff only sees support
+                $query->where('type', 'support');
+            }
 
             if ($request->filled('status')) {
                 if ($request->query('status') !== 'all') {
@@ -52,33 +61,45 @@ class ChatController extends ApiController
                 });
             }
         } else {
-            // User's own conversations (farmer, practitioner, or staff personal)
-            $query->where(function ($q) use ($user, $isStaff) {
-                $q->whereHas('participants', function ($pq) use ($user) {
-                    $pq->where('user_id', $user->id);
-                })->orWhere('created_by', $user->id);
-
-                // If practitioner, also include assigned service request practitioner conversations
-                if ($user->hasAnyRole(['veterinary_doctor', 'consultant'])) {
-                    $q->orWhere(function ($sq) use ($user) {
-                        $sq->where('type', 'practitioner')
-                           ->where('context_type', 'service_request')
-                           ->whereIn('context_id', ServiceRequest::where('assigned_to', $user->id)->pluck('id'));
-                    });
+            // General conversation list
+            if ($isAdmin) {
+                // Admin has full platform oversight: can list all or filter by type
+                if ($request->filled('type') && $request->query('type') !== 'all') {
+                    $query->where('type', $request->query('type'));
                 }
 
-                // If staff and filtering by support, allow staff access
-                if ($isStaff) {
-                    $q->orWhere('type', 'support');
+                if ($request->filled('status') && $request->query('status') !== 'all') {
+                    $query->where('status', $request->query('status'));
                 }
-            });
+            } else {
+                // Standard participant-scoped query for farmers, practitioners, and DEO
+                $query->where(function ($q) use ($user, $isStaff) {
+                    $q->whereHas('participants', function ($pq) use ($user) {
+                        $pq->where('user_id', $user->id);
+                    })->orWhere('created_by', $user->id);
 
-            if ($request->filled('type')) {
-                $query->where('type', $request->query('type'));
-            }
+                    // If practitioner, also include assigned service request practitioner conversations
+                    if ($user->hasAnyRole(['veterinary_doctor', 'consultant'])) {
+                        $q->orWhere(function ($sq) use ($user) {
+                            $sq->where('type', 'practitioner')
+                               ->where('context_type', 'service_request')
+                               ->whereIn('context_id', ServiceRequest::where('assigned_to', $user->id)->pluck('id'));
+                        });
+                    }
 
-            if ($request->filled('status') && $request->query('status') !== 'all') {
-                $query->where('status', $request->query('status'));
+                    // If staff and filtering by support, allow staff access
+                    if ($isStaff) {
+                        $q->orWhere('type', 'support');
+                    }
+                });
+
+                if ($request->filled('type')) {
+                    $query->where('type', $request->query('type'));
+                }
+
+                if ($request->filled('status') && $request->query('status') !== 'all') {
+                    $query->where('status', $request->query('status'));
+                }
             }
         }
 

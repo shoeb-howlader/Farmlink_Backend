@@ -579,4 +579,85 @@ class ChatModuleTest extends TestCase
                 in_array($msg->id, $event->messageIds);
         });
     }
+
+    public function test_admin_can_list_and_filter_practitioner_conversations_in_support_inbox(): void
+    {
+        $sr = ServiceRequest::factory()->create([
+            'farmer_id' => $this->farmer->id,
+            'farm_id' => $this->farm->id,
+            'assigned_to' => $this->vet->id,
+            'status' => 'assigned',
+        ]);
+
+        $practitionerConv = Conversation::create([
+            'type' => 'practitioner',
+            'status' => 'open',
+            'context_type' => 'service_request',
+            'context_id' => $sr->id,
+            'created_by' => $this->farmer->id,
+            'last_message_at' => now(),
+        ]);
+        $practitionerConv->participants()->create(['user_id' => $this->farmer->id]);
+        $practitionerConv->participants()->create(['user_id' => $this->vet->id]);
+
+        $supportConv = Conversation::create([
+            'type' => 'support',
+            'status' => 'open',
+            'created_by' => $this->farmer->id,
+            'last_message_at' => now(),
+        ]);
+        $supportConv->participants()->create(['user_id' => $this->farmer->id]);
+
+        Sanctum::actingAs($this->admin);
+
+        // 1. Admin querying inbox with type=practitioner gets the vet consultation
+        $response = $this->getJson('/api/v1/admin/support-inbox?type=practitioner');
+        $response->assertStatus(200);
+        $convs = $response->json('data.conversations');
+        $this->assertCount(1, $convs);
+        $this->assertEquals($practitionerConv->id, $convs[0]['id']);
+        $this->assertEquals('practitioner', $convs[0]['type']);
+        $this->assertStringContainsString('Sadek Farmer', $convs[0]['other_party']['name']);
+        $this->assertStringContainsString('Dr. Tanvir', $convs[0]['other_party']['name']);
+
+        // 2. Admin querying inbox with type=all gets both
+        $responseAll = $this->getJson('/api/v1/admin/support-inbox?type=all');
+        $responseAll->assertStatus(200);
+        $this->assertCount(2, $responseAll->json('data.conversations'));
+    }
+
+    public function test_admin_can_reply_to_practitioner_consultation_conversation(): void
+    {
+        $sr = ServiceRequest::factory()->create([
+            'farmer_id' => $this->farmer->id,
+            'farm_id' => $this->farm->id,
+            'assigned_to' => $this->vet->id,
+            'status' => 'assigned',
+        ]);
+
+        $conv = Conversation::create([
+            'type' => 'practitioner',
+            'status' => 'open',
+            'context_type' => 'service_request',
+            'context_id' => $sr->id,
+            'created_by' => $this->farmer->id,
+            'last_message_at' => now(),
+        ]);
+        $conv->participants()->create(['user_id' => $this->farmer->id]);
+        $conv->participants()->create(['user_id' => $this->vet->id]);
+
+        Sanctum::actingAs($this->admin);
+
+        // Admin posts an intervention / guidance message
+        $response = $this->postJson("/api/v1/chat/conversations/{$conv->id}/messages", [
+            'body' => 'FarmLink Admin note: We have expedited veterinary medicine dispatch to Khulna.',
+        ]);
+
+        $response->assertStatus(201);
+        $this->assertEquals('FarmLink Admin note: We have expedited veterinary medicine dispatch to Khulna.', $response->json('data.message.body'));
+        $this->assertEquals('admin', $response->json('data.message.sender.role'));
+
+        // Admin is added to conversation participants
+        $this->assertTrue($conv->participants()->where('user_id', $this->admin->id)->exists());
+    }
 }
