@@ -89,7 +89,7 @@ class FarmController extends ApiController
         Gate::authorize('view', $farm);
 
         return $this->successResponse(
-            new FarmResource($farm),
+            new FarmResource($farm->loadMissing(['user', 'division', 'districtModel', 'upazilaModel', 'unionModel', 'pourashava', 'images'])),
             'Farm retrieved successfully'
         );
     }

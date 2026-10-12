@@ -62,8 +62,20 @@ class FarmResource extends JsonResource
             ] : null,
             'has_unmatched_location' => !($this->district_id && $this->upazila_id && ($this->union_id || $this->pourashava_id || empty($this->union))),
             'district' => $this->district,
+            'district_bn' => ($this->relationLoaded('districtModel') && $this->districtModel)
+                ? $this->districtModel->bn_name
+                : ($this->district ? \App\Models\District::where('name', 'ilike', trim($this->district))->value('bn_name') : null),
             'upazila' => $this->upazila,
+            'upazila_bn' => ($this->relationLoaded('upazilaModel') && $this->upazilaModel)
+                ? $this->upazilaModel->bn_name
+                : ($this->upazila ? \App\Models\Upazila::where('name', 'ilike', trim($this->upazila))->value('bn_name') : null),
             'union' => $this->union,
+            'union_bn' => ($this->relationLoaded('unionModel') && $this->unionModel)
+                ? $this->unionModel->bn_name
+                : null,
+            'division_bn' => ($this->relationLoaded('division') && $this->division)
+                ? $this->division->bn_name
+                : null,
             'village' => $this->village,
             'farm_address' => $this->farm_address,
             'gps_lat' => $this->gps_lat !== null ? (float) $this->gps_lat : null,
