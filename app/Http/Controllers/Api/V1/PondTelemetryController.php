@@ -20,9 +20,15 @@ class PondTelemetryController extends ApiController
     {
         $user = $request->user();
 
-        if ($user->hasRole('farmer') && $farm->user_id !== $user->id) {
-            abort(403, 'You are not authorized to view or log telemetry for this farm.');
+        if ($user->hasAnyRole(['admin', 'data_entry_operator'])) {
+            return;
         }
+
+        if ($user->hasRole('farmer') && $farm->user_id === $user->id) {
+            return;
+        }
+
+        abort(403, 'You are not authorized to view or log telemetry for this farm.');
     }
 
     /**

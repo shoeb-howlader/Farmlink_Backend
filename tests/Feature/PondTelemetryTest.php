@@ -224,4 +224,54 @@ class PondTelemetryTest extends TestCase
         $this->assertStringContainsString('text/csv', $responseCsv->headers->get('Content-Type'));
         $this->assertStringContainsString('Dissolved Oxygen', $responseCsv->streamedContent());
     }
+
+    public function test_admin_and_deo_can_log_and_view_water_quality_in_any_farm(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $deo = User::factory()->deo()->create();
+
+        // 1. Admin logs water quality for farmer's farm
+        $responseAdmin = $this->actingAs($admin)
+            ->postJson("/api/v1/farms/{$this->farm->id}/telemetries", [
+                'pond_name' => 'Admin Inspected Pond',
+                'dissolved_oxygen' => 5.8,
+                'ph' => 7.6,
+                'salinity' => 17.0,
+                'notes' => 'Logged during administrative field check',
+            ]);
+
+        $responseAdmin->assertStatus(201)
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.pond_name', 'Admin Inspected Pond')
+            ->assertJsonPath('data.dissolved_oxygen', 5.8);
+
+        $this->assertDatabaseHas('pond_telemetries', [
+            'farm_id' => $this->farm->id,
+            'user_id' => $admin->id,
+            'pond_name' => 'Admin Inspected Pond',
+        ]);
+
+        // 2. DEO logs water quality for farmer's farm
+        $responseDeo = $this->actingAs($deo)
+            ->postJson("/api/v1/farms/{$this->farm->id}/telemetries", [
+                'pond_name' => 'DEO Assisted Pond',
+                'dissolved_oxygen' => 6.4,
+                'ph' => 8.0,
+                'salinity' => 16.5,
+                'notes' => 'Assisted farmer entry at local kiosk',
+            ]);
+
+        $responseDeo->assertStatus(201)
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.pond_name', 'DEO Assisted Pond');
+
+        // 3. Admin and DEO can view the farm's telemetry list
+        $viewAdmin = $this->actingAs($admin)->getJson("/api/v1/farms/{$this->farm->id}/telemetries");
+        $viewAdmin->assertStatus(200)
+            ->assertJsonPath('meta.total', 2);
+
+        $viewDeo = $this->actingAs($deo)->getJson("/api/v1/farms/{$this->farm->id}/telemetries");
+        $viewDeo->assertStatus(200)
+            ->assertJsonPath('meta.total', 2);
+    }
 }
