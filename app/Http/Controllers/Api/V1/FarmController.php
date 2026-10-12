@@ -145,4 +145,28 @@ class FarmController extends ApiController
             'Farm image uploaded successfully'
         );
     }
+
+    /**
+     * Download or stream the official bilingual Farm Profile Dossier (PDF).
+     */
+    public function dossier(Request $request, Farm $farm, \App\Services\PdfDocumentService $pdfService): \Symfony\Component\HttpFoundation\Response
+    {
+        Gate::authorize('view', $farm);
+
+        $pdfBinary = $pdfService->generateFarmDossierPdf($farm, [
+            'lang' => $request->query('lang', 'bn'),
+        ]);
+
+        $safeFarmName = \Illuminate\Support\Str::slug($farm->farm_name) ?: "farm-{$farm->id}";
+        $filename = "Farm-Dossier-{$safeFarmName}-" . date('Y-m-d') . ".pdf";
+
+        $disposition = $request->boolean('download') ? 'attachment' : 'inline';
+
+        return response($pdfBinary, 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => sprintf('%s; filename="%s"', $disposition, $filename),
+            'X-Dossier-Farm-Id' => (string) $farm->id,
+        ]);
+    }
 }
+

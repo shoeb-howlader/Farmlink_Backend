@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Farm;
 use App\Models\Order;
 use App\Models\ServiceRequest;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -59,4 +60,56 @@ class PdfDocumentService
 
         return $pdf->output();
     }
+
+    /**
+     * Generate the raw PDF binary string for a Farm Profile Dossier.
+     */
+    public function generateFarmDossierPdf(Farm $farm, array $options = []): string
+    {
+        $farm->loadMissing([
+            'user',
+            'division',
+            'districtModel',
+            'upazilaModel',
+            'unionModel',
+            'pourashava',
+            'images',
+        ]);
+
+        $telemetryQuery = $farm->telemetries()->with('user')->orderBy('recorded_at', 'desc');
+        $recentTelemetries = (clone $telemetryQuery)->take(8)->get();
+        $telemetryCount = (clone $telemetryQuery)->count();
+        $avgDo = $farm->telemetries()->whereNotNull('dissolved_oxygen')->avg('dissolved_oxygen');
+        $avgPh = $farm->telemetries()->whereNotNull('ph')->avg('ph');
+        $avgSalinity = $farm->telemetries()->whereNotNull('salinity')->avg('salinity');
+        $avgTemp = $farm->telemetries()->whereNotNull('temperature')->avg('temperature');
+
+        $activeCycle = method_exists($farm, 'cycles')
+            ? $farm->cycles()->where('status', 'active')->latest()->first()
+            : null;
+
+        $vetVisitsCount = method_exists($farm, 'vetRecords') ? $farm->vetRecords()->count() : 0;
+        $consultantVisitsCount = method_exists($farm, 'consultantRecords') ? $farm->consultantRecords()->count() : 0;
+        $ordersCount = method_exists($farm, 'orders') ? $farm->orders()->count() : 0;
+
+        $pdf = Pdf::loadView('reports.farm_dossier', [
+            'farm' => $farm,
+            'recentTelemetries' => $recentTelemetries,
+            'telemetryCount' => $telemetryCount,
+            'avgDo' => $avgDo,
+            'avgPh' => $avgPh,
+            'avgSalinity' => $avgSalinity,
+            'avgTemp' => $avgTemp,
+            'activeCycle' => $activeCycle,
+            'vetVisitsCount' => $vetVisitsCount,
+            'consultantVisitsCount' => $consultantVisitsCount,
+            'ordersCount' => $ordersCount,
+            'options' => $options,
+        ]);
+
+        $pdf->setPaper('a4', 'portrait');
+
+        return $pdf->output();
+    }
 }
+

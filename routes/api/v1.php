@@ -109,6 +109,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/farms/{farm}/images/{image}', [FarmController::class, 'deleteGalleryImage'])->name('farms.images.delete');
     Route::patch('/farms/{farm}/images/{image}/primary', [FarmController::class, 'setPrimaryImage'])->name('farms.images.primary');
     Route::patch('/farms/{farm}/images/{image}', [FarmController::class, 'updateGalleryImage'])->name('farms.images.update');
+    Route::get('/farms/{farm}/dossier', [FarmController::class, 'dossier'])->name('farms.dossier');
 
     // Pond Water Telemetry & Offline Background Sync
     Route::get('/farms/{farm}/telemetries', [PondTelemetryController::class, 'index'])->name('farms.telemetries.index');
@@ -228,6 +229,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/farms/{farm}/images/{image}', [AdminFarmController::class, 'deleteGalleryImage'])->name('farms.images.delete');
         Route::patch('/farms/{farm}/images/{image}/primary', [AdminFarmController::class, 'setPrimaryImage'])->name('farms.images.primary');
         Route::patch('/farms/{farm}/images/{image}', [AdminFarmController::class, 'updateGalleryImage'])->name('farms.images.update');
+        Route::get('/farms/{farm}/dossier', [AdminFarmController::class, 'dossier'])->name('farms.dossier');
 
         // Farmers Directory & Management
         Route::get('/farmers', [AdminFarmerController::class, 'index'])->name('farmers.index');

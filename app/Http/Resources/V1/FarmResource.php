@@ -64,12 +64,11 @@ class FarmResource extends JsonResource
             'district' => $this->district,
             'district_bn' => ($this->relationLoaded('districtModel') && $this->districtModel)
                 ? $this->districtModel->bn_name
-                : ($this->district ? \App\Models\District::where('name', 'ilike', trim($this->district))->value('bn_name') : null),
+                : null,
             'upazila' => $this->upazila,
             'upazila_bn' => ($this->relationLoaded('upazilaModel') && $this->upazilaModel)
                 ? $this->upazilaModel->bn_name
-                : ($this->upazila ? \App\Models\Upazila::where('name', 'ilike', trim($this->upazila))->value('bn_name') : null),
-            'union' => $this->union,
+                : null,
             'union_bn' => ($this->relationLoaded('unionModel') && $this->unionModel)
                 ? $this->unionModel->bn_name
                 : null,
