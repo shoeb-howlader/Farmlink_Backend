@@ -22,6 +22,7 @@ class ProductVariantResource extends JsonResource
             'id' => $this->id,
             'product_id' => $this->product_id,
             'variant_label' => $this->variant_label,
+            'variant_label_bn' => $this->variant_label_bn,
             'sku' => $this->sku,
             'price' => (float) $this->price,
             'compare_at_price' => $this->compare_at_price !== null ? (float) $this->compare_at_price : null,

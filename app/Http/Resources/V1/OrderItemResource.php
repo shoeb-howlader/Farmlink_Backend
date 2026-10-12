@@ -36,6 +36,7 @@ class OrderItemResource extends JsonResource
             'product' => new ProductResource($this->whenLoaded('product')),
             'variant' => ($this->relationLoaded('variant') && $this->variant) ? new ProductVariantResource($this->variant) : null,
             'variant_label' => $this->relationLoaded('variant') ? $this->variant?->variant_label : null,
+            'variant_label_bn' => $this->relationLoaded('variant') ? $this->variant?->variant_label_bn : null,
             'quantity' => (int) $this->quantity,
             'price' => $price,
             'price_at_purchase' => $price,

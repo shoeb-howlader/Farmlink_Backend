@@ -49,7 +49,7 @@ class SettingController extends ApiController
     public function update(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'group' => ['nullable', 'string', 'in:general,delivery,notifications,system,fraud'],
+            'group' => ['nullable', 'string', 'in:general,delivery,notifications,system,fraud,localization'],
             'settings' => ['required', 'array'],
             'settings.site_name' => ['nullable', 'string', 'max:255'],
             'settings.site_logo_url' => ['nullable', 'string', 'max:500'],
@@ -58,6 +58,7 @@ class SettingController extends ApiController
             'settings.currency_symbol' => ['nullable', 'string', 'max:10'],
             'settings.currency_code' => ['nullable', 'string', 'max:10'],
             'settings.business_hours' => ['nullable', 'string', 'max:500'],
+            'settings.pwa_dismissal_duration_days' => ['nullable', 'integer', 'min:1', 'max:365'],
             'settings.flat_delivery_fee' => ['nullable', 'numeric', 'min:0'],
             'settings.free_delivery_threshold' => ['nullable', 'numeric', 'min:0'],
             'settings.fraud_detection_enabled' => ['nullable', 'boolean'],
@@ -68,6 +69,12 @@ class SettingController extends ApiController
             'settings.advance_delivery_fee_amount' => ['nullable', 'numeric', 'min:0'],
             'settings.auto_confirm_on_phone_verified' => ['nullable', 'boolean'],
             'settings.ip_geolocation_enabled' => ['nullable', 'boolean'],
+            'settings.default_public_locale' => ['nullable', 'string', 'in:bn,en'],
+            'settings.default_locale_farmer' => ['nullable', 'string', 'in:bn,en'],
+            'settings.default_locale_admin' => ['nullable', 'string', 'in:bn,en'],
+            'settings.default_locale_deo' => ['nullable', 'string', 'in:bn,en'],
+            'settings.default_locale_vet' => ['nullable', 'string', 'in:bn,en'],
+            'settings.default_locale_consultant' => ['nullable', 'string', 'in:bn,en'],
         ]);
 
         $group = $validated['group'] ?? 'general';
@@ -80,6 +87,8 @@ class SettingController extends ApiController
                 $itemGroup = 'delivery';
             } elseif (str_starts_with($key, 'fraud_') || str_starts_with($key, 'bulk_cod_') || str_starts_with($key, 'cod_max_') || str_starts_with($key, 'advance_delivery_') || str_starts_with($key, 'auto_confirm_') || str_starts_with($key, 'ip_geo')) {
                 $itemGroup = 'fraud';
+            } elseif (str_starts_with($key, 'default_') || str_starts_with($key, 'locale_')) {
+                $itemGroup = 'localization';
             }
 
             Setting::set($key, $value, $itemGroup, $userId);
@@ -164,6 +173,17 @@ class SettingController extends ApiController
             'free_delivery_threshold' => Setting::get('free_delivery_threshold') !== null
                 ? (float) Setting::get('free_delivery_threshold')
                 : null,
+            'pwa_dismissal_duration_days' => (int) Setting::get('pwa_dismissal_duration_days', 30),
+            'default_public_locale' => Setting::get('default_public_locale', 'bn'),
+            'default_role_locales' => [
+                'farmer' => Setting::get('default_locale_farmer', 'bn'),
+                'admin' => Setting::get('default_locale_admin', 'en'),
+                'data_entry_operator' => Setting::get('default_locale_deo', 'bn'),
+                'deo' => Setting::get('default_locale_deo', 'bn'),
+                'veterinary_doctor' => Setting::get('default_locale_vet', 'bn'),
+                'vet' => Setting::get('default_locale_vet', 'bn'),
+                'consultant' => Setting::get('default_locale_consultant', 'bn'),
+            ],
         ])->header('Cache-Control', 'public, max-age=300, stale-while-revalidate=600');
     }
 }

@@ -213,5 +213,13 @@ class Farm extends Model
     {
         return $this->belongsTo(Pourashava::class, 'pourashava_id');
     }
+
+    /**
+     * Get pond water telemetry logs for this farm.
+     */
+    public function telemetries(): HasMany
+    {
+        return $this->hasMany(PondTelemetry::class);
+    }
 }
 

@@ -138,19 +138,25 @@ class ProductController extends ApiController
 
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
+            'name_bn' => ['nullable', 'string', 'max:255'],
             'category' => ['required', 'string', 'max:100'],
+            'category_bn' => ['nullable', 'string', 'max:100'],
             'short_description' => ['nullable', 'string', 'max:255'],
+            'short_description_bn' => ['nullable', 'string', 'max:255'],
             'price' => ['nullable', 'numeric', 'min:0'],
             'stock' => ['nullable', 'integer', 'min:0'],
             'low_stock_threshold' => ['nullable', 'integer', 'min:0'],
             'image_url' => ['nullable', 'string', 'max:500'],
             'description' => ['nullable', 'string'],
+            'description_bn' => ['nullable', 'string'],
             'usage_instructions' => ['nullable', 'string'],
+            'usage_instructions_bn' => ['nullable', 'string'],
             'video_url' => ['nullable', 'string', 'max:500'],
             'is_active' => ['nullable', 'boolean'],
             'is_featured' => ['nullable', 'boolean'],
             'variants' => ['nullable', 'array', 'min:1'],
             'variants.*.variant_label' => ['required_with:variants', 'string', 'max:100'],
+            'variants.*.variant_label_bn' => ['nullable', 'string', 'max:100'],
             'variants.*.sku' => ['nullable', 'string', 'max:100'],
             'variants.*.price' => ['required_with:variants', 'numeric', 'min:0'],
             'variants.*.compare_at_price' => ['nullable', 'numeric', 'min:0'],
@@ -171,19 +177,27 @@ class ProductController extends ApiController
 
         // Sanitize rich text inputs
         $sanitizedDesc = isset($validated['description']) ? RichTextSanitizer::sanitize($validated['description']) : null;
+        $sanitizedDescBn = isset($validated['description_bn']) ? RichTextSanitizer::sanitize($validated['description_bn']) : null;
         $sanitizedUsage = isset($validated['usage_instructions']) ? RichTextSanitizer::sanitize($validated['usage_instructions']) : null;
+        $sanitizedUsageBn = isset($validated['usage_instructions_bn']) ? RichTextSanitizer::sanitize($validated['usage_instructions_bn']) : null;
         $shortDesc = $validated['short_description'] ?? ($sanitizedDesc ? Str::limit(strip_tags($sanitizedDesc), 155) : null);
+        $shortDescBn = $validated['short_description_bn'] ?? ($sanitizedDescBn ? Str::limit(strip_tags($sanitizedDescBn), 155) : null);
 
         $product = Product::create([
             'name' => $validated['name'],
+            'name_bn' => $validated['name_bn'] ?? null,
             'category' => $validated['category'],
+            'category_bn' => $validated['category_bn'] ?? null,
             'short_description' => $shortDesc,
+            'short_description_bn' => $shortDescBn,
             'price' => $initialPrice,
             'stock' => $initialStock,
             'low_stock_threshold' => $validated['low_stock_threshold'] ?? 10,
             'image_url' => $validated['image_url'] ?? null,
             'description' => $sanitizedDesc,
+            'description_bn' => $sanitizedDescBn,
             'usage_instructions' => $sanitizedUsage,
+            'usage_instructions_bn' => $sanitizedUsageBn,
             'video_url' => $validated['video_url'] ?? null,
             'is_active' => $validated['is_active'] ?? true,
             'is_featured' => $validated['is_featured'] ?? false,
@@ -215,6 +229,7 @@ class ProductController extends ApiController
                 $vSlug = strtoupper(trim((string) preg_replace('/[^A-Za-z0-9]+/', '-', $v['variant_label'] ?? ''), '-'));
                 $product->variants()->create([
                     'variant_label' => $v['variant_label'],
+                    'variant_label_bn' => $v['variant_label_bn'] ?? null,
                     'sku' => ! empty($v['sku']) ? $v['sku'] : ('PRD-' . $product->id . '-' . ($vSlug ?: ('VAR' . ($idx + 1)))),
                     'price' => $v['price'],
                     'compare_at_price' => $v['compare_at_price'] ?? null,
@@ -264,19 +279,25 @@ class ProductController extends ApiController
 
         $validated = $request->validate([
             'name' => ['sometimes', 'required', 'string', 'max:255'],
+            'name_bn' => ['nullable', 'string', 'max:255'],
             'category' => ['sometimes', 'required', 'string', 'max:100'],
+            'category_bn' => ['nullable', 'string', 'max:100'],
             'short_description' => ['nullable', 'string', 'max:255'],
+            'short_description_bn' => ['nullable', 'string', 'max:255'],
             'price' => ['nullable', 'numeric', 'min:0'],
             'low_stock_threshold' => ['nullable', 'integer', 'min:0'],
             'image_url' => ['nullable', 'string', 'max:500'],
             'description' => ['nullable', 'string'],
+            'description_bn' => ['nullable', 'string'],
             'usage_instructions' => ['nullable', 'string'],
+            'usage_instructions_bn' => ['nullable', 'string'],
             'video_url' => ['nullable', 'string', 'max:500'],
             'is_active' => ['nullable', 'boolean'],
             'is_featured' => ['nullable', 'boolean'],
             'variants' => ['nullable', 'array', 'min:1'],
             'variants.*.id' => ['nullable', 'integer'],
             'variants.*.variant_label' => ['required_with:variants', 'string', 'max:100'],
+            'variants.*.variant_label_bn' => ['nullable', 'string', 'max:100'],
             'variants.*.sku' => ['nullable', 'string', 'max:100'],
             'variants.*.price' => ['required_with:variants', 'numeric', 'min:0'],
             'variants.*.compare_at_price' => ['nullable', 'numeric', 'min:0'],
@@ -301,8 +322,17 @@ class ProductController extends ApiController
                 $productData['short_description'] = Str::limit(strip_tags($productData['description']), 155);
             }
         }
+        if (array_key_exists('description_bn', $productData)) {
+            $productData['description_bn'] = RichTextSanitizer::sanitize($productData['description_bn']);
+            if (empty($productData['short_description_bn']) && $productData['description_bn']) {
+                $productData['short_description_bn'] = Str::limit(strip_tags($productData['description_bn']), 155);
+            }
+        }
         if (array_key_exists('usage_instructions', $productData)) {
             $productData['usage_instructions'] = RichTextSanitizer::sanitize($productData['usage_instructions']);
+        }
+        if (array_key_exists('usage_instructions_bn', $productData)) {
+            $productData['usage_instructions_bn'] = RichTextSanitizer::sanitize($productData['usage_instructions_bn']);
         }
 
         $product->update($productData);
@@ -338,6 +368,7 @@ class ProductController extends ApiController
                     if ($variant) {
                         $variant->update([
                             'variant_label' => $v['variant_label'],
+                            'variant_label_bn' => array_key_exists('variant_label_bn', $v) ? $v['variant_label_bn'] : $variant->variant_label_bn,
                             'sku' => $v['sku'] ?? $variant->sku,
                             'price' => $v['price'],
                             'compare_at_price' => array_key_exists('compare_at_price', $v) ? $v['compare_at_price'] : $variant->compare_at_price,
@@ -353,6 +384,7 @@ class ProductController extends ApiController
                     $vSlug = strtoupper(trim((string) preg_replace('/[^A-Za-z0-9]+/', '-', $v['variant_label'] ?? ''), '-'));
                     $newVar = $product->variants()->create([
                         'variant_label' => $v['variant_label'],
+                        'variant_label_bn' => $v['variant_label_bn'] ?? null,
                         'sku' => ! empty($v['sku']) ? $v['sku'] : ('PRD-' . $product->id . '-' . ($vSlug ?: ('VAR' . ($idx + 1)))),
                         'price' => $v['price'],
                         'compare_at_price' => $v['compare_at_price'] ?? null,

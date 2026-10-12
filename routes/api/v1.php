@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\V1\Admin\BroadcastController as AdminBroadcastContr
 use App\Http\Controllers\Api\V1\Admin\FarmController as AdminFarmController;
 use App\Http\Controllers\Api\V1\Admin\FarmerController as AdminFarmerController;
 use App\Http\Controllers\Api\V1\Admin\FollowUpController;
+use App\Http\Controllers\Api\V1\Admin\ImpersonationController as AdminImpersonationController;
 use App\Http\Controllers\Api\V1\Admin\NotificationController as AdminNotificationController;
 use App\Http\Controllers\Api\V1\Admin\OrderController as AdminOrderController;
 use App\Http\Controllers\Api\V1\Admin\PaymentController as AdminPaymentController;
@@ -29,6 +30,7 @@ use App\Http\Controllers\Api\V1\Admin\PosController as AdminPosController;
 use App\Http\Controllers\Api\V1\OtpController;
 use App\Http\Controllers\Api\V1\OrderController;
 use App\Http\Controllers\Api\V1\PaymentController;
+use App\Http\Controllers\Api\V1\PondTelemetryController;
 use App\Http\Controllers\Api\V1\Practitioner\ServiceRequestController as PractitionerServiceRequestController;
 use App\Http\Controllers\Api\V1\PrescriptionController;
 use App\Http\Controllers\Api\V1\ProductController;
@@ -94,6 +96,7 @@ Route::prefix('locations')->as('locations.')->group(function () {
 // Protected routes (Sanctum)
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
+    Route::post('/impersonate/leave', [AdminImpersonationController::class, 'leave'])->name('impersonate.leave');
     Route::get('/me', [AuthController::class, 'me'])->name('me');
     Route::patch('/me', [AuthController::class, 'updateProfile'])->name('me.update');
     Route::post('/me/password', [AuthController::class, 'updatePassword'])->name('me.password');
@@ -106,6 +109,13 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/farms/{farm}/images/{image}', [FarmController::class, 'deleteGalleryImage'])->name('farms.images.delete');
     Route::patch('/farms/{farm}/images/{image}/primary', [FarmController::class, 'setPrimaryImage'])->name('farms.images.primary');
     Route::patch('/farms/{farm}/images/{image}', [FarmController::class, 'updateGalleryImage'])->name('farms.images.update');
+
+    // Pond Water Telemetry & Offline Background Sync
+    Route::get('/farms/{farm}/telemetries', [PondTelemetryController::class, 'index'])->name('farms.telemetries.index');
+    Route::post('/farms/{farm}/telemetries', [PondTelemetryController::class, 'store'])->name('farms.telemetries.store');
+    Route::post('/farms/{farm}/telemetries/batch', [PondTelemetryController::class, 'batchSync'])->name('farms.telemetries.batch');
+    Route::get('/farms/{farm}/telemetries/summary', [PondTelemetryController::class, 'summary'])->name('farms.telemetries.summary');
+    Route::get('/farms/{farm}/telemetries/export', [PondTelemetryController::class, 'export'])->name('farms.telemetries.export');
 
     // Orders & Checkout
     Route::get('/orders', [OrderController::class, 'index'])->name('orders.index');
@@ -202,6 +212,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::middleware('role:admin|data_entry_operator')->prefix('admin')->as('admin.')->group(function () {
         // Shared Support Inbox
         Route::get('/support-inbox', [ChatController::class, 'index'])->defaults('inbox', true)->name('support-inbox.index');
+
+        // Fisheries District Water Quality Heatmap & Monitoring (Admin & DEO)
+        Route::get('/telemetry/district-heatmap', [\App\Http\Controllers\Api\V1\Admin\AdminTelemetryHeatmapController::class, 'index'])->name('telemetry.heatmap');
+
         // Farms Directory & Management
         Route::get('/farms', [AdminFarmController::class, 'index'])->name('farms.index');
         Route::get('/farms-unmatched-locations', [AdminFarmController::class, 'unmatchedLocations'])->name('farms.unmatched-locations');
@@ -250,6 +264,9 @@ Route::middleware('auth:sanctum')->group(function () {
         // STRICTLY ADMIN-ONLY ROUTES (DEO Blocked Server-Side via role:admin)
         // ══════════════════════════════════════════════════════════════════
         Route::middleware('role:admin')->group(function () {
+            // User Impersonation & Account Troubleshooting
+            Route::post('/impersonate/{user}', [AdminImpersonationController::class, 'impersonate'])->name('impersonate');
+
             // Product Catalog Mutations & Stock Adjustments
             Route::post('/products', [AdminProductController::class, 'store'])->name('products.store');
             Route::post('/products/editor-image', [AdminProductController::class, 'uploadEditorImage'])->name('products.editor-image');

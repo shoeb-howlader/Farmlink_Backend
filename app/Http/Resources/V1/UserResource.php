@@ -29,6 +29,13 @@ class UserResource extends JsonResource
             'gender' => $this->gender ?? 'unspecified',
             'profile_image_path' => $this->profile_image_path,
             'role' => $this->roles->first()?->name ?? 'farmer',
+            'role_default_locale' => match ($this->roles->first()?->name) {
+                'admin' => \App\Models\Setting::get('default_locale_admin', 'en'),
+                'data_entry_operator' => \App\Models\Setting::get('default_locale_deo', 'bn'),
+                'veterinary_doctor' => \App\Models\Setting::get('default_locale_vet', 'bn'),
+                'consultant' => \App\Models\Setting::get('default_locale_consultant', 'bn'),
+                default => \App\Models\Setting::get('default_locale_farmer', 'bn'),
+            },
             'roles' => $this->roles->pluck('name'),
             'is_active' => (bool) ($this->is_active ?? true),
             'status' => $this->status ?? 'active',

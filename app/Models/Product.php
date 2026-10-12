@@ -20,8 +20,11 @@ class Product extends Model
      */
     protected $fillable = [
         'name',
+        'name_bn',
         'category',
+        'category_bn',
         'short_description',
+        'short_description_bn',
         'price',
         'stock',
         'low_stock_threshold',
@@ -29,7 +32,9 @@ class Product extends Model
         'image_path',
         'image_thumbnail_path',
         'description',
+        'description_bn',
         'usage_instructions',
+        'usage_instructions_bn',
         'video_url',
         'is_active',
         'is_featured',

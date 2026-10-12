@@ -150,6 +150,35 @@ class SettingsAndCouponsTest extends TestCase
         $this->assertEquals($this->admin->id, $responseIndex->json('data.recent_logs.0.actor.id'));
     }
 
+    public function test_admin_can_configure_pwa_dismissal_duration_and_is_exposed_publicly(): void
+    {
+        $response = $this->actingAs($this->admin)
+            ->putJson('/api/v1/admin/settings', [
+                'group' => 'general',
+                'settings' => [
+                    'pwa_dismissal_duration_days' => 45,
+                ],
+            ]);
+
+        $response->assertOk();
+        $this->assertEquals(45, (int) Setting::get('pwa_dismissal_duration_days'));
+
+        // Verify public settings exposes it
+        $publicRes = $this->getJson('/api/v1/settings/public');
+        $publicRes->assertOk()
+            ->assertJsonPath('data.pwa_dismissal_duration_days', 45);
+
+        // Validation rejects out of range (< 1 or > 365)
+        $badRes = $this->actingAs($this->admin)
+            ->putJson('/api/v1/admin/settings', [
+                'group' => 'general',
+                'settings' => [
+                    'pwa_dismissal_duration_days' => 0,
+                ],
+            ]);
+        $badRes->assertUnprocessable();
+    }
+
     public function test_fraud_and_risk_settings_can_be_updated_by_admin(): void
     {
         $response = $this->actingAs($this->admin)
@@ -382,5 +411,48 @@ class SettingsAndCouponsTest extends TestCase
         $resPublicAfter = $this->getJson('/api/v1/settings/public');
         $resPublicAfter->assertOk()
             ->assertJsonPath('data.site_logo_url', null);
+    }
+
+    public function test_admin_can_update_language_defaults_and_public_and_role_locales_are_returned(): void
+    {
+        // 1. Initial public settings has defaults
+        $resPublic = $this->getJson('/api/v1/settings/public');
+        $resPublic->assertOk()
+            ->assertJsonPath('data.default_public_locale', 'bn')
+            ->assertJsonPath('data.default_role_locales.farmer', 'bn')
+            ->assertJsonPath('data.default_role_locales.admin', 'en');
+
+        // 2. Admin updates language settings
+        $payload = [
+            'group' => 'localization',
+            'settings' => [
+                'default_public_locale' => 'en',
+                'default_locale_farmer' => 'bn',
+                'default_locale_admin' => 'en',
+                'default_locale_deo' => 'bn',
+                'default_locale_vet' => 'en',
+                'default_locale_consultant' => 'en',
+            ],
+        ];
+
+        $resAdmin = $this->actingAs($this->admin)->putJson('/api/v1/admin/settings', $payload);
+        $resAdmin->assertOk()
+            ->assertJsonPath('success', true);
+
+        // 3. Public settings reflects updated landing page and role defaults
+        $resPublicUpdated = $this->getJson('/api/v1/settings/public');
+        $resPublicUpdated->assertOk()
+            ->assertJsonPath('data.default_public_locale', 'en')
+            ->assertJsonPath('data.default_role_locales.vet', 'en')
+            ->assertJsonPath('data.default_role_locales.consultant', 'en');
+
+        // 4. Authenticated user profile returns computed role_default_locale
+        $resMe = $this->actingAs($this->farmer)->getJson('/api/v1/me');
+        $resMe->assertOk()
+            ->assertJsonPath('data.role_default_locale', 'bn');
+
+        $resAdminMe = $this->actingAs($this->admin)->getJson('/api/v1/me');
+        $resAdminMe->assertOk()
+            ->assertJsonPath('data.role_default_locale', 'en');
     }
 }

@@ -221,6 +221,71 @@ class ProductSeeder extends Seeder
             'description' => 'High-purity beta-1,3/1,6-glucan immune booster that activates phagocytic cells against viral and opportunistic bacterial outbreaks.',
             'is_featured' => false,
         ],
+        // Additional High-Demand Coastal Aquaculture Products
+        [
+            'name' => 'Shrimp Post-Larvae Micro-Nursery Flakes 1kg',
+            'category' => 'Feed',
+            'price' => 1450.00,
+            'stock' => 60,
+            'description' => 'Artemia-enriched high-protein (45%) nursery crumble feed for PL10 to PL25 shrimp post-larvae. Promotes rapid somatic growth and optimizes nursery survival rate.',
+            'is_featured' => false,
+        ],
+        [
+            'name' => 'Bio-Bacillus Brackish Water Probiotic 1kg',
+            'category' => 'Probiotics',
+            'price' => 2200.00,
+            'stock' => 50,
+            'description' => 'Halophilic Bacillus and Nitrosomonas consortia engineered specifically for brackish coastal shrimp ponds (10-30 ppt salinity). Breaks down bottom hydrogen sulfide and sludge.',
+            'is_featured' => true,
+        ],
+        [
+            'name' => 'Solar Quad-Paddlewheel Pond Aerator 2HP',
+            'category' => 'Equipment',
+            'price' => 38500.00,
+            'stock' => 12,
+            'description' => 'Complete solar-driven 4-impeller paddlewheel aerator with MPPT smart inverter and brushless DC motor. Guarantees 8+ hours daytime aeration without grid power or diesel generators.',
+            'is_featured' => true,
+        ],
+        [
+            'name' => 'Digital Multi-Parameter Water Sonde',
+            'category' => 'Equipment',
+            'price' => 15800.00,
+            'stock' => 18,
+            'description' => 'Handheld digital multi-probe analyzer with 5m submersible cable. Measures Dissolved Oxygen (DO), pH, salinity (ppt), and water temperature with instant LCD digital display.',
+            'is_featured' => false,
+        ],
+        [
+            'name' => 'Pond-Tox Toxic Gas Neutralizer 5kg',
+            'category' => 'Chemicals',
+            'price' => 1650.00,
+            'stock' => 75,
+            'description' => 'Potent micro-adsorbent silicate and natural yucca extract powder. Rapidly sequesters deadly hydrogen sulfide, nitrite, and ammonia spikes during sudden weather changes.',
+            'is_featured' => false,
+        ],
+        [
+            'name' => 'Povidone Iodine 10% Aquaculture Disinfectant 1L',
+            'category' => 'Chemicals',
+            'price' => 920.00,
+            'stock' => 85,
+            'description' => 'Safe, broad-spectrum veterinary grade 10% povidone iodine sanitizer for disinfecting pond water, feeding trays, sampling nets, and nursery gear against viral pathogens.',
+            'is_featured' => false,
+        ],
+        [
+            'name' => 'Aqua-C 50% Anti-Stress Ascorbic Acid 1kg',
+            'category' => 'Medicine',
+            'price' => 1150.00,
+            'stock' => 95,
+            'description' => 'Micro-encapsulated heat-stable L-ascorbic acid (Vitamin C 50%). Fortifies shrimp and fish immune resilience during extreme heatwaves, heavy monsoonal rain, and pond netting.',
+            'is_featured' => true,
+        ],
+        [
+            'name' => 'Mineral-Plus Marine Osmotic Premix 10kg',
+            'category' => 'Medicine',
+            'price' => 1850.00,
+            'stock' => 110,
+            'description' => 'Comprehensive ionic mineral supplement providing essential calcium, magnesium, potassium, and trace elements for smooth molting and preventing cramping in coastal shrimp culture.',
+            'is_featured' => false,
+        ],
     ];
 
     /**
@@ -228,47 +293,19 @@ class ProductSeeder extends Seeder
      */
     public function run(): void
     {
-        $existingProducts = Product::orderBy('id')->get();
-        if ($existingProducts->isNotEmpty() && $existingProducts->count() <= count(self::CATALOG)) {
-            collect(self::CATALOG)->each(function ($item, $index) use ($existingProducts) {
-                $existing = $existingProducts->get($index);
-                if ($existing) {
-                    $existing->update([
-                        'name' => $item['name'],
-                        'category' => $item['category'],
-                        'price' => $item['price'],
-                        'stock' => $item['stock'],
-                        'description' => $item['description'],
-                        'is_active' => true,
-                        'is_featured' => $item['is_featured'] ?? false,
-                    ]);
-                } else {
-                    Product::create([
-                        'name' => $item['name'],
-                        'category' => $item['category'],
-                        'price' => $item['price'],
-                        'stock' => $item['stock'],
-                        'description' => $item['description'],
-                        'is_active' => true,
-                        'is_featured' => $item['is_featured'] ?? false,
-                    ]);
-                }
-            });
-        } else {
-            collect(self::CATALOG)->each(function ($item) {
-                Product::updateOrCreate(
-                    ['name' => $item['name']],
-                    [
-                        'category' => $item['category'],
-                        'price' => $item['price'],
-                        'stock' => $item['stock'],
-                        'description' => $item['description'],
-                        'is_active' => true,
-                        'is_featured' => $item['is_featured'] ?? false,
-                    ]
-                );
-            });
-        }
+        collect(self::CATALOG)->each(function ($item) {
+            Product::updateOrCreate(
+                ['name' => $item['name']],
+                [
+                    'category' => $item['category'],
+                    'price' => $item['price'],
+                    'stock' => $item['stock'],
+                    'description' => $item['description'],
+                    'is_active' => true,
+                    'is_featured' => $item['is_featured'] ?? false,
+                ]
+            );
+        });
 
         $allProducts = Product::all();
         foreach ($allProducts as $product) {
@@ -310,6 +347,86 @@ class ProductSeeder extends Seeder
                 $product->variants()->firstOrCreate(
                     ['variant_label' => '5L Canister'],
                     ['sku' => "PRD-{$product->id}-5L-CANISTER", 'price' => 5400.00, 'stock' => 15, 'is_default' => false]
+                );
+            } elseif (str_contains($product->name, 'Shrimp Post-Larvae Micro-Nursery Flakes')) {
+                $product->variants()->firstOrCreate(
+                    ['variant_label' => '500g Tub'],
+                    ['sku' => "PRD-{$product->id}-500G-TUB", 'price' => 780.00, 'stock' => 35, 'is_default' => false]
+                );
+                $product->variants()->firstOrCreate(
+                    ['variant_label' => '1kg Foil Pack'],
+                    ['sku' => "PRD-{$product->id}-1KG-FOIL", 'price' => 1450.00, 'stock' => 60, 'is_default' => true]
+                );
+            } elseif (str_contains($product->name, 'Bio-Bacillus Brackish Water Probiotic')) {
+                $product->variants()->firstOrCreate(
+                    ['variant_label' => '500g Pack'],
+                    ['sku' => "PRD-{$product->id}-500G-PACK", 'price' => 1200.00, 'stock' => 30, 'is_default' => false]
+                );
+                $product->variants()->firstOrCreate(
+                    ['variant_label' => '1kg Pack'],
+                    ['sku' => "PRD-{$product->id}-1KG-PACK", 'price' => 2200.00, 'stock' => 50, 'is_default' => true]
+                );
+                $product->variants()->firstOrCreate(
+                    ['variant_label' => '5kg Bucket'],
+                    ['sku' => "PRD-{$product->id}-5KG-BUCKET", 'price' => 9800.00, 'stock' => 15, 'is_default' => false]
+                );
+            } elseif (str_contains($product->name, 'Solar Quad-Paddlewheel Pond Aerator')) {
+                $product->variants()->firstOrCreate(
+                    ['variant_label' => '1.5HP with 400W Solar Kit'],
+                    ['sku' => "PRD-{$product->id}-1-5HP-SOLAR", 'price' => 32000.00, 'stock' => 8, 'is_default' => false]
+                );
+                $product->variants()->firstOrCreate(
+                    ['variant_label' => '2HP with 600W Solar Kit'],
+                    ['sku' => "PRD-{$product->id}-2HP-SOLAR", 'price' => 38500.00, 'stock' => 12, 'is_default' => true]
+                );
+            } elseif (str_contains($product->name, 'Digital Multi-Parameter Water Sonde')) {
+                $product->variants()->firstOrCreate(
+                    ['variant_label' => 'Standard 3m Cable'],
+                    ['sku' => "PRD-{$product->id}-3M-CABLE", 'price' => 14200.00, 'stock' => 10, 'is_default' => false]
+                );
+                $product->variants()->firstOrCreate(
+                    ['variant_label' => 'Extended 5m Cable'],
+                    ['sku' => "PRD-{$product->id}-5M-CABLE", 'price' => 15800.00, 'stock' => 18, 'is_default' => true]
+                );
+            } elseif (str_contains($product->name, 'Pond-Tox Toxic Gas Neutralizer')) {
+                $product->variants()->firstOrCreate(
+                    ['variant_label' => '2kg Pack'],
+                    ['sku' => "PRD-{$product->id}-2KG-PACK", 'price' => 750.00, 'stock' => 40, 'is_default' => false]
+                );
+                $product->variants()->firstOrCreate(
+                    ['variant_label' => '5kg Bucket'],
+                    ['sku' => "PRD-{$product->id}-5KG-BUCKET", 'price' => 1650.00, 'stock' => 75, 'is_default' => true]
+                );
+            } elseif (str_contains($product->name, 'Povidone Iodine 10% Aquaculture Disinfectant')) {
+                $product->variants()->firstOrCreate(
+                    ['variant_label' => '500ml Bottle'],
+                    ['sku' => "PRD-{$product->id}-500ML", 'price' => 500.00, 'stock' => 45, 'is_default' => false]
+                );
+                $product->variants()->firstOrCreate(
+                    ['variant_label' => '1L Bottle'],
+                    ['sku' => "PRD-{$product->id}-1L-BOTTLE", 'price' => 920.00, 'stock' => 85, 'is_default' => true]
+                );
+                $product->variants()->firstOrCreate(
+                    ['variant_label' => '5L Canister'],
+                    ['sku' => "PRD-{$product->id}-5L-CANISTER", 'price' => 4200.00, 'stock' => 25, 'is_default' => false]
+                );
+            } elseif (str_contains($product->name, 'Aqua-C 50% Anti-Stress Ascorbic Acid')) {
+                $product->variants()->firstOrCreate(
+                    ['variant_label' => '500g Pouch'],
+                    ['sku' => "PRD-{$product->id}-500G-POUCH", 'price' => 620.00, 'stock' => 40, 'is_default' => false]
+                );
+                $product->variants()->firstOrCreate(
+                    ['variant_label' => '1kg Foil Pack'],
+                    ['sku' => "PRD-{$product->id}-1KG-FOIL", 'price' => 1150.00, 'stock' => 95, 'is_default' => true]
+                );
+            } elseif (str_contains($product->name, 'Mineral-Plus Marine Osmotic Premix')) {
+                $product->variants()->firstOrCreate(
+                    ['variant_label' => '5kg Bag'],
+                    ['sku' => "PRD-{$product->id}-5KG-BAG", 'price' => 980.00, 'stock' => 50, 'is_default' => false]
+                );
+                $product->variants()->firstOrCreate(
+                    ['variant_label' => '10kg Commercial Sack'],
+                    ['sku' => "PRD-{$product->id}-10KG-SACK", 'price' => 1850.00, 'stock' => 110, 'is_default' => true]
                 );
             } elseif ($product->variants()->count() === 0) {
                 $label = 'Standard';

@@ -19,6 +19,7 @@ class ProductVariant extends Model
     protected $fillable = [
         'product_id',
         'variant_label',
+        'variant_label_bn',
         'sku',
         'price',
         'compare_at_price',
