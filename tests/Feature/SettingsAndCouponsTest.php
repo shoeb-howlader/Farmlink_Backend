@@ -347,6 +347,50 @@ class SettingsAndCouponsTest extends TestCase
         $this->assertFalse(collect($resPublicAfter->json('data'))->contains('slug', 'coop_cluster'));
     }
 
+    public function test_taxonomies_bilingual_name_bn_resolution_and_farm_resource_integration(): void
+    {
+        // 1. Create a custom bilingual taxonomy item
+        $resCreate = $this->actingAs($this->admin)->postJson('/api/v1/admin/taxonomies', [
+            'type' => 'culture_type',
+            'name' => 'Mud Crab Fattening',
+            'name_bn' => 'শিলা কাঁকড়া হৃষ্টপুষ্টকরণ',
+            'slug' => 'crab_fattening',
+            'description' => 'Fattening wild mud crabs in pens or boxes',
+            'is_active' => true,
+        ]);
+        $resCreate->assertCreated();
+        $this->assertEquals('শিলা কাঁকড়া হৃষ্টপুষ্টকরণ', $resCreate->json('data.name_bn'));
+
+        // 2. Active grouped endpoint delivers name_bn
+        $resGrouped = $this->getJson('/api/v1/taxonomies');
+        $resGrouped->assertOk();
+        $cultureTypes = collect($resGrouped->json('data.culture_type') ?? []);
+        $found = $cultureTypes->firstWhere('slug', 'crab_fattening');
+        $this->assertNotNull($found);
+        $this->assertEquals('Mud Crab Fattening', $found['name']);
+        $this->assertEquals('শিলা কাঁকড়া হৃষ্টপুষ্টকরণ', $found['name_bn']);
+
+        // 3. Update farm with this culture type
+        $this->farm->main_culture_type = 'crab_fattening';
+        $this->farm->farm_type = 'own';
+        $this->farm->available_facilities = ['Electric', 'Aerator'];
+        $this->farm->save();
+
+        // 4. Test FarmResource via show endpoint
+        $resFarm = $this->actingAs($this->farmer)->getJson("/api/v1/farms/{$this->farm->id}");
+        $resFarm->assertOk();
+
+        // Check English fields
+        $this->assertEquals('crab_fattening', $resFarm->json('data.main_culture_type'));
+        $this->assertEquals('own', $resFarm->json('data.farm_type'));
+
+        // Check Bengali resolved fields
+        $this->assertEquals('শিলা কাঁকড়া হৃষ্টপুষ্টকরণ', $resFarm->json('data.main_culture_type_bn'));
+        $this->assertStringContainsString('নিজস্ব', $resFarm->json('data.farm_type_bn'));
+        $facilitiesBn = $resFarm->json('data.available_facilities_bn');
+        $this->assertTrue(collect($facilitiesBn)->contains(fn ($f) => str_contains($f, 'বিদ্যুৎ')));
+    }
+
     public function test_payment_methods_active_toggle(): void
     {
         $method = PaymentMethod::create([

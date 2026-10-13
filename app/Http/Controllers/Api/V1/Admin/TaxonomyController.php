@@ -46,6 +46,7 @@ class TaxonomyController extends ApiController
             $search = trim($request->query('search'));
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'like', "%{$search}%")
+                    ->orWhere('name_bn', 'like', "%{$search}%")
                     ->orWhere('slug', 'like', "%{$search}%");
             });
         }
@@ -65,7 +66,8 @@ class TaxonomyController extends ApiController
     {
         $validated = $request->validate([
             'type' => ['required', 'string', Rule::in($this->allowedTypes)],
-            'name' => ['required', 'string', 'max:100'],
+            'name' => ['required', 'string', 'max:150'],
+            'name_bn' => ['nullable', 'string', 'max:150'],
             'slug' => ['nullable', 'string', 'max:100', 'alpha_dash'],
             'description' => ['nullable', 'string', 'max:500'],
             'sort_order' => ['nullable', 'integer', 'min:0'],
@@ -95,6 +97,7 @@ class TaxonomyController extends ApiController
                 'type' => $taxonomy->type,
                 'slug' => $taxonomy->slug,
                 'name' => $taxonomy->name,
+                'name_bn' => $taxonomy->name_bn,
             ],
             $request->user()?->id
         );
@@ -108,7 +111,8 @@ class TaxonomyController extends ApiController
     public function update(Request $request, Taxonomy $taxonomy): JsonResponse
     {
         $validated = $request->validate([
-            'name' => ['required', 'string', 'max:100'],
+            'name' => ['required', 'string', 'max:150'],
+            'name_bn' => ['nullable', 'string', 'max:150'],
             'description' => ['nullable', 'string', 'max:500'],
             'sort_order' => ['nullable', 'integer', 'min:0'],
             'is_active' => ['boolean'],

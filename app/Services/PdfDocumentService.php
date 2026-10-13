@@ -77,7 +77,7 @@ class PdfDocumentService
         ]);
 
         $telemetryQuery = $farm->telemetries()->with('user')->orderBy('recorded_at', 'desc');
-        $recentTelemetries = (clone $telemetryQuery)->take(8)->get();
+        $recentTelemetries = (clone $telemetryQuery)->take(5)->get();
         $telemetryCount = (clone $telemetryQuery)->count();
         $avgDo = $farm->telemetries()->whereNotNull('dissolved_oxygen')->avg('dissolved_oxygen');
         $avgPh = $farm->telemetries()->whereNotNull('ph')->avg('ph');
@@ -105,6 +105,7 @@ class PdfDocumentService
             'consultantVisitsCount' => $consultantVisitsCount,
             'ordersCount' => $ordersCount,
             'options' => $options,
+            'taxonomyMap' => \App\Models\Taxonomy::getLookupMapCached()['global'] ?? [],
         ])->render();
 
         $defaultConfig = (new \Mpdf\Config\ConfigVariables())->getDefaults();

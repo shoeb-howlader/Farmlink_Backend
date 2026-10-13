@@ -3,6 +3,7 @@
 namespace App\Http\Resources\V1;
 
 use App\Models\Farm;
+use App\Models\Taxonomy;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -27,6 +28,7 @@ class FarmResource extends JsonResource
             'image_path' => $this->image_path,
             'image_thumbnail_url' => $this->image_thumbnail_path ? \Illuminate\Support\Facades\Storage::disk('public')->url($this->image_thumbnail_path) : ($this->image_path ? \Illuminate\Support\Facades\Storage::disk('public')->url($this->image_path) : $this->image_url),
             'farm_type' => $this->farm_type,
+            'farm_type_bn' => Taxonomy::resolveBn('farm_type', $this->farm_type),
             'total_area' => (float) $this->total_area,
             'pond_count' => (int) $this->pond_count,
             'cultivation_area' => $this->cultivation_area !== null ? (float) $this->cultivation_area : null,
@@ -81,18 +83,29 @@ class FarmResource extends JsonResource
             'gps_lng' => $this->gps_lng !== null ? (float) $this->gps_lng : null,
             'aquaculture_experience_years' => $this->aquaculture_experience_years,
             'previous_farming_experience' => $this->previous_farming_experience,
+            'previous_farming_experience_bn' => Taxonomy::resolveBn('previous_experience', $this->previous_farming_experience),
             'main_culture_type' => $this->main_culture_type,
+            'main_culture_type_bn' => Taxonomy::resolveBn('culture_type', $this->main_culture_type),
             'farming_system' => $this->farming_system,
+            'farming_system_bn' => Taxonomy::resolveBn('farming_system', $this->farming_system),
             'main_water_source' => $this->main_water_source,
+            'main_water_source_bn' => Taxonomy::resolveBn('water_source', $this->main_water_source),
             'water_exchange_facility' => $this->water_exchange_facility,
+            'water_exchange_facility_bn' => Taxonomy::resolveBn('water_exchange', $this->water_exchange_facility),
             'water_source_distance' => $this->water_source_distance,
             'available_facilities' => $this->available_facilities,
+            'available_facilities_bn' => is_array($this->available_facilities)
+                ? array_values(array_map(fn ($f) => Taxonomy::resolveBn('facility', $f) ?? $f, $this->available_facilities))
+                : [],
             'aerator_count' => $this->aerator_count,
             'aerator_hp' => $this->aerator_hp,
             'aerator_hours_per_day' => $this->aerator_hours_per_day !== null ? (float) $this->aerator_hours_per_day : null,
             'farm_manager' => $this->farm_manager,
+            'farm_manager_bn' => Taxonomy::resolveBn('farm_manager', $this->farm_manager),
             'technical_support_used' => $this->technical_support_used,
+            'technical_support_used_bn' => Taxonomy::resolveBn('technical_support', $this->technical_support_used),
             'main_advice_source' => $this->main_advice_source,
+            'main_advice_source_bn' => Taxonomy::resolveBn('advice_source', $this->main_advice_source),
             'orders_count' => (int) ($this->orders_count ?? 0),
             'visits_count' => (int) (($this->vet_records_count ?? 0) + ($this->consultant_records_count ?? 0)),
             'images' => ($this->relationLoaded('images') && $this->images) ? $this->images->map(fn ($img) => [
