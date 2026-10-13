@@ -187,14 +187,25 @@ class ChatController extends ApiController
         // Mark as read for the viewer
         $this->performMarkAsRead($conversation, $user);
 
-        // Fetch messages with sender roles eagerly loaded to prevent N+1 queries
-        $messages = $conversation->messages()
+        // Fetch messages using reverse cursor pagination (latest messages first, reversed to chronological)
+        $limit = min(max((int) $request->input('limit', 50), 1), 100);
+        $beforeId = $request->input('before_id');
+
+        $messagesQuery = $conversation->messages()
             ->with(['sender' => function ($q) {
                 $q->select('id', 'name', 'phone')->with('roles:id,name');
             }])
-            ->orderBy('id', 'asc')
-            ->take(200)
-            ->get();
+            ->orderBy('id', 'desc');
+
+        if ($beforeId) {
+            $messagesQuery->where('id', '<', (int) $beforeId);
+        }
+
+        $fetchedMessages = $messagesQuery->take($limit)->get();
+        $hasMore = $fetchedMessages->count() === $limit;
+        $nextCursor = $hasMore ? $fetchedMessages->last()?->id : null;
+
+        $messages = $fetchedMessages->reverse()->values();
 
         // Build context object
         $contextData = null;
@@ -240,24 +251,48 @@ class ChatController extends ApiController
                 'last_message_at' => $conversation->last_message_at?->toISOString(),
                 'created_at' => $conversation->created_at?->toISOString(),
             ],
-            'messages' => $messages->map(fn (Message $m) => [
-                'id' => $m->id,
-                'conversation_id' => $m->conversation_id,
-                'sender_id' => $m->sender_id,
-                'sender' => [
-                    'id' => $m->sender->id,
-                    'name' => $m->sender->name,
-                    'phone' => $m->sender->phone,
-                    'role' => $m->sender->roles->first()?->name ?? 'farmer',
-                ],
-                'body' => $m->body,
-                'attachment_path' => $m->attachment_path,
-                'attachment_url' => $m->attachment_url,
-                'is_pdf' => $m->is_pdf,
-                'read_at' => $m->read_at?->toISOString(),
-                'created_at' => $m->created_at?->toISOString(),
-            ]),
+            'messages' => $messages->map(fn (Message $m) => $this->formatMessage($m)),
+            'has_more' => $hasMore,
+            'next_cursor' => $nextCursor,
         ], 'Conversation loaded successfully');
+    }
+
+    /**
+     * Get paginated messages for a conversation (cursor-based reverse pagination).
+     */
+    public function getMessages(Request $request, int $id): JsonResponse
+    {
+        $user = $request->user();
+        $conversation = Conversation::findOrFail($id);
+
+        if (! $this->canAccessConversation($user, $conversation)) {
+            return $this->forbiddenResponse('You do not have permission to access messages in this conversation.');
+        }
+
+        $limit = min(max((int) $request->input('limit', 50), 1), 100);
+        $beforeId = $request->input('before_id');
+
+        $messagesQuery = $conversation->messages()
+            ->with(['sender' => function ($q) {
+                $q->select('id', 'name', 'phone')->with('roles:id,name');
+            }])
+            ->orderBy('id', 'desc');
+
+        if ($beforeId) {
+            $messagesQuery->where('id', '<', (int) $beforeId);
+        }
+
+        $fetchedMessages = $messagesQuery->take($limit)->get();
+        $hasMore = $fetchedMessages->count() === $limit;
+        $nextCursor = $hasMore ? $fetchedMessages->last()?->id : null;
+
+        $messages = $fetchedMessages->reverse()->values();
+
+        return $this->successResponse([
+            'messages' => $messages->map(fn (Message $m) => $this->formatMessage($m)),
+            'has_more' => $hasMore,
+            'next_cursor' => $nextCursor,
+        ], 'Messages loaded successfully');
     }
 
     /**
@@ -755,6 +790,30 @@ class ChatController extends ApiController
     protected function notifyRecipients(Conversation $conversation, Message $message, $sender): void
     {
         // Intentionally excluded from general notification bell to avoid duplicate clutter.
+    }
+
+    /**
+     * Helper: Format a message model into a consistent API response array.
+     */
+    protected function formatMessage(Message $m): array
+    {
+        return [
+            'id' => $m->id,
+            'conversation_id' => $m->conversation_id,
+            'sender_id' => $m->sender_id,
+            'sender' => [
+                'id' => $m->sender?->id ?? $m->sender_id,
+                'name' => $m->sender?->name ?? 'User',
+                'phone' => $m->sender?->phone,
+                'role' => $m->sender?->roles?->first()?->name ?? 'farmer',
+            ],
+            'body' => $m->body,
+            'attachment_path' => $m->attachment_path,
+            'attachment_url' => $m->attachment_url,
+            'is_pdf' => $m->is_pdf,
+            'read_at' => $m->read_at?->toISOString(),
+            'created_at' => $m->created_at?->toISOString(),
+        ];
     }
 
     /**

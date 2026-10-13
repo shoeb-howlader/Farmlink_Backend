@@ -189,6 +189,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/chat/conversations', [ChatController::class, 'index'])->name('chat.conversations.index');
     Route::post('/chat/conversations', [ChatController::class, 'store'])->name('chat.conversations.store');
     Route::get('/chat/conversations/{id}', [ChatController::class, 'show'])->name('chat.conversations.show');
+    Route::get('/chat/conversations/{id}/messages', [ChatController::class, 'getMessages'])->name('chat.conversations.messages.index');
     Route::post('/chat/conversations/{id}/messages', [ChatController::class, 'sendMessage'])->name('chat.conversations.messages.send');
     Route::post('/chat/conversations/{id}/typing', [ChatController::class, 'typing'])->name('chat.conversations.typing');
     Route::patch('/chat/conversations/{id}/read', [ChatController::class, 'markAsRead'])->name('chat.conversations.read');

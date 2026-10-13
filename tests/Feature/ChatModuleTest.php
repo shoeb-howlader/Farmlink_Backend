@@ -769,4 +769,53 @@ class ChatModuleTest extends TestCase
         $this->assertContains($supportConv->id, $allIds);
         $this->assertContains($pracConv->id, $allIds);
     }
+
+    public function test_cursor_based_reverse_pagination_for_large_chat_history(): void
+    {
+        $conv = Conversation::create([
+            'type' => 'support',
+            'status' => 'open',
+            'created_by' => $this->farmer->id,
+        ]);
+        $conv->participants()->create(['user_id' => $this->farmer->id]);
+
+        // Seed 60 messages (message 1 to message 60)
+        for ($i = 1; $i <= 60; $i++) {
+            \App\Models\Message::create([
+                'conversation_id' => $conv->id,
+                'sender_id' => $this->farmer->id,
+                'body' => "Message number {$i}",
+            ]);
+        }
+
+        Sanctum::actingAs($this->farmer);
+
+        // 1. Initial conversation load with default limit 50
+        $res = $this->getJson("/api/v1/chat/conversations/{$conv->id}");
+        $res->assertStatus(200)
+            ->assertJsonPath('data.has_more', true);
+
+        $messages = $res->json('data.messages');
+        $this->assertCount(50, $messages);
+
+        // First message in returned list should be message 11, and last should be message 60 (chronological order)
+        $this->assertEquals('Message number 11', $messages[0]['body']);
+        $this->assertEquals('Message number 60', $messages[49]['body']);
+
+        $nextCursor = $res->json('data.next_cursor');
+        $this->assertEquals($messages[0]['id'], $nextCursor);
+
+        // 2. Fetch older messages before cursor via messages endpoint
+        $olderRes = $this->getJson("/api/v1/chat/conversations/{$conv->id}/messages?before_id={$nextCursor}&limit=50");
+        $olderRes->assertStatus(200)
+            ->assertJsonPath('data.has_more', false)
+            ->assertJsonPath('data.next_cursor', null);
+
+        $olderMessages = $olderRes->json('data.messages');
+        $this->assertCount(10, $olderMessages);
+
+        // Older batch should contain message 1 through message 10
+        $this->assertEquals('Message number 1', $olderMessages[0]['body']);
+        $this->assertEquals('Message number 10', $olderMessages[9]['body']);
+    }
 }
