@@ -99,3 +99,21 @@ test('unauthenticated request to dossier is rejected with 401', function () {
 
     $response->assertUnauthorized();
 });
+
+test('farm dossier renders correctly when farm has production cycles and vet records', function () {
+    \App\Models\FarmCycle::create([
+        'farm_id' => $this->farm->id,
+        'label' => 'Cycle 2026-A',
+        'start_date' => now()->subMonths(2),
+        'end_date' => null,
+        'created_by' => $this->farmer->id,
+    ]);
+
+    Sanctum::actingAs($this->admin);
+
+    $response = $this->get("/api/v1/admin/farms/{$this->farm->id}/dossier?download=1");
+
+    $response->assertOk();
+    expect($response->headers->get('content-type'))->toContain('application/pdf');
+});
+

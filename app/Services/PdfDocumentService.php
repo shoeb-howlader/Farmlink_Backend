@@ -84,9 +84,9 @@ class PdfDocumentService
         $avgSalinity = $farm->telemetries()->whereNotNull('salinity')->avg('salinity');
         $avgTemp = $farm->telemetries()->whereNotNull('temperature')->avg('temperature');
 
-        $activeCycle = method_exists($farm, 'cycles')
-            ? $farm->cycles()->where('status', 'active')->latest()->first()
-            : null;
+        $activeCycle = method_exists($farm, 'currentCycle')
+            ? $farm->currentCycle
+            : (method_exists($farm, 'cycles') ? $farm->cycles()->whereNull('end_date')->latest('start_date')->first() : null);
 
         $vetVisitsCount = method_exists($farm, 'vetRecords') ? $farm->vetRecords()->count() : 0;
         $consultantVisitsCount = method_exists($farm, 'consultantRecords') ? $farm->consultantRecords()->count() : 0;
