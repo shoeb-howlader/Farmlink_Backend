@@ -30,7 +30,7 @@ class ChatController extends ApiController
         $isInboxMode = $request->routeIs('*support-inbox*') || (bool) $request->route('inbox') || $request->boolean('inbox') || ($isStaff && $request->query('view') === 'inbox');
 
         $query = Conversation::query()
-            ->with(['creator', 'users', 'latestMessage.sender']);
+            ->with(['creator.roles', 'users.roles', 'participants', 'latestMessage.sender.roles']);
 
         if ($isInboxMode) {
             // Admin / DEO Support Inbox
@@ -111,7 +111,31 @@ class ChatController extends ApiController
         // Sort by latest message activity, fallback to created_at
         $conversations = $query->orderByRaw('COALESCE(last_message_at, created_at) DESC')->paginate(30);
 
-        $data = $conversations->getCollection()->map(function (Conversation $conv) use ($user) {
+        $collection = $conversations->getCollection();
+        $convIds = $collection->pluck('id');
+
+        // Batch pre-fetch context records to avoid N+1 queries in getContextLabel()
+        $orderIds = $collection->where('context_type', 'order')->pluck('context_id')->filter()->unique();
+        $ordersMap = $orderIds->isNotEmpty()
+            ? Order::whereIn('id', $orderIds)->select('id', 'invoice_number')->get()->keyBy('id')
+            : collect();
+
+        $srIds = $collection->where('context_type', 'service_request')->pluck('context_id')->filter()->unique();
+        $srMap = $srIds->isNotEmpty()
+            ? ServiceRequest::whereIn('id', $srIds)->select('id', 'type')->get()->keyBy('id')
+            : collect();
+
+        // Batch precompute unread message counts in a single query
+        $unreadCounts = $convIds->isNotEmpty()
+            ? Message::whereIn('conversation_id', $convIds)
+                ->where('sender_id', '!=', $user->id)
+                ->whereNull('read_at')
+                ->groupBy('conversation_id')
+                ->selectRaw('conversation_id, count(*) as aggregate')
+                ->pluck('aggregate', 'conversation_id')
+            : collect();
+
+        $data = $collection->map(function (Conversation $conv) use ($user, $ordersMap, $srMap, $unreadCounts) {
             $latest = $conv->latestMessage;
             $otherParty = $conv->getDisplayParty($user);
 
@@ -121,7 +145,7 @@ class ChatController extends ApiController
                 'status' => $conv->status,
                 'context_type' => $conv->context_type,
                 'context_id' => $conv->context_id,
-                'context_label' => $conv->getContextLabel(),
+                'context_label' => $conv->getContextLabel($ordersMap, $srMap),
                 'other_party' => $otherParty,
                 'latest_message' => $latest ? [
                     'id' => $latest->id,
@@ -131,7 +155,7 @@ class ChatController extends ApiController
                     'sender_name' => $latest->sender?->name ?? 'User',
                     'created_at' => $latest->created_at?->toISOString(),
                 ] : null,
-                'unread_count' => $conv->unreadCountFor($user),
+                'unread_count' => (int) ($unreadCounts->get($conv->id) ?? 0),
                 'last_message_at' => ($conv->last_message_at ?? $conv->created_at)?->toISOString(),
                 'created_at' => $conv->created_at?->toISOString(),
             ];
@@ -154,7 +178,7 @@ class ChatController extends ApiController
     public function show(Request $request, int $id): JsonResponse
     {
         $user = $request->user();
-        $conversation = Conversation::with(['creator', 'users', 'participants'])->findOrFail($id);
+        $conversation = Conversation::with(['creator.roles', 'users.roles', 'participants'])->findOrFail($id);
 
         if (! $this->canAccessConversation($user, $conversation)) {
             return $this->forbiddenResponse('You do not have permission to view this conversation.');
@@ -163,9 +187,11 @@ class ChatController extends ApiController
         // Mark as read for the viewer
         $this->performMarkAsRead($conversation, $user);
 
-        // Fetch messages
+        // Fetch messages with sender roles eagerly loaded to prevent N+1 queries
         $messages = $conversation->messages()
-            ->with('sender:id,name,phone')
+            ->with(['sender' => function ($q) {
+                $q->select('id', 'name', 'phone')->with('roles:id,name');
+            }])
             ->orderBy('id', 'asc')
             ->take(200)
             ->get();
@@ -173,7 +199,7 @@ class ChatController extends ApiController
         // Build context object
         $contextData = null;
         if ($conversation->context_type === 'order' && $conversation->context_id) {
-            $order = Order::with('farm')->find($conversation->context_id);
+            $order = Order::with('farm:id,farm_name')->find($conversation->context_id);
             if ($order) {
                 $contextData = [
                     'type' => 'order',
@@ -185,7 +211,7 @@ class ChatController extends ApiController
                 ];
             }
         } elseif ($conversation->context_type === 'service_request' && $conversation->context_id) {
-            $sr = ServiceRequest::with(['farm', 'assignedPractitioner', 'farmer'])->find($conversation->context_id);
+            $sr = ServiceRequest::with(['farm:id,farm_name', 'assignedPractitioner:id,name', 'farmer:id,name'])->find($conversation->context_id);
             if ($sr) {
                 $contextData = [
                     'type' => 'service_request',

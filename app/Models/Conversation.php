@@ -72,7 +72,7 @@ class Conversation extends Model
     /**
      * Get human-readable context label.
      */
-    public function getContextLabel(): ?string
+    public function getContextLabel(?\Illuminate\Support\Collection $ordersMap = null, ?\Illuminate\Support\Collection $serviceRequestsMap = null): ?string
     {
         if ($this->type === 'direct') {
             return 'Direct Message';
@@ -83,11 +83,20 @@ class Conversation extends Model
         }
 
         if ($this->context_type === 'order') {
+            if ($ordersMap && $ordersMap->has($this->context_id)) {
+                $order = $ordersMap->get($this->context_id);
+                return $order ? "Order #{$order->invoice_number}" : "Order #{$this->context_id}";
+            }
             $order = Order::find($this->context_id);
             return $order ? "Order #{$order->invoice_number}" : "Order #{$this->context_id}";
         }
 
         if ($this->context_type === 'service_request') {
+            if ($serviceRequestsMap && $serviceRequestsMap->has($this->context_id)) {
+                $req = $serviceRequestsMap->get($this->context_id);
+                $typeLabel = $req ? ucfirst(str_replace('_', ' ', $req->type ?? 'Service')) : 'Service';
+                return "Service Request #{$this->context_id} ({$typeLabel})";
+            }
             $req = ServiceRequest::find($this->context_id);
             $typeLabel = $req ? ucfirst(str_replace('_', ' ', $req->type ?? 'Service')) : 'Service';
             return "Service Request #{$this->context_id} ({$typeLabel})";
@@ -102,14 +111,14 @@ class Conversation extends Model
     public function getDisplayParty(User $viewer): array
     {
         $isStaff = $viewer->hasAnyRole(['admin', 'data_entry_operator']);
+        $users = $this->relationLoaded('users') ? $this->users : $this->users()->with('roles')->get();
 
         if ($this->type === 'direct') {
-            $participants = $this->users()->get();
-            $otherUser = $participants->firstWhere('id', '!=', $viewer->id);
+            $otherUser = $users->firstWhere('id', '!=', $viewer->id);
 
-            if (! $otherUser && $participants->count() >= 2) {
-                $u1 = $participants[0];
-                $u2 = $participants[1];
+            if (! $otherUser && $users->count() >= 2) {
+                $u1 = $users[0];
+                $u2 = $users[1];
                 return [
                     'id' => $u1->id,
                     'name' => "{$u1->name} ↔ {$u2->name}",
@@ -120,7 +129,8 @@ class Conversation extends Model
                 ];
             }
 
-            $target = $otherUser ?? ($this->created_by !== $viewer->id ? $this->creator : null) ?? $participants->first();
+            $creator = $this->relationLoaded('creator') ? $this->creator : ($this->created_by !== $viewer->id ? $this->creator()->first() : null);
+            $target = $otherUser ?? ($this->created_by !== $viewer->id ? $creator : null) ?? $users->first();
             if ($target) {
                 $roleName = $target->roles->first()?->name ?? ($target->role ?? 'user');
                 $formattedRole = match ($roleName) {
@@ -146,9 +156,10 @@ class Conversation extends Model
         if ($this->type === 'support') {
             if ($isStaff) {
                 // Show the farmer for the admin/DEO viewer
-                $farmer = $this->users()->whereDoesntHave('roles', function ($q) {
-                    $q->whereIn('name', ['admin', 'data_entry_operator']);
-                })->first() ?? $this->creator;
+                $creator = $this->relationLoaded('creator') ? $this->creator : $this->creator()->first();
+                $farmer = $users->first(function ($u) {
+                    return ! $u->hasAnyRole(['admin', 'data_entry_operator']);
+                }) ?? $creator;
 
                 return [
                     'id' => $farmer?->id,
@@ -172,12 +183,13 @@ class Conversation extends Model
         // Practitioner conversation
         if ($this->type === 'practitioner') {
             $isPractitioner = $viewer->hasAnyRole(['veterinary_doctor', 'consultant']);
+            $creator = $this->relationLoaded('creator') ? $this->creator : $this->creator()->first();
 
             if ($isPractitioner) {
                 // Viewer is practitioner -> other party is the farmer
-                $farmer = $this->users()->whereDoesntHave('roles', function ($q) {
-                    $q->whereIn('name', ['veterinary_doctor', 'consultant', 'admin', 'data_entry_operator']);
-                })->first() ?? $this->creator;
+                $farmer = $users->first(function ($u) {
+                    return ! $u->hasAnyRole(['veterinary_doctor', 'consultant', 'admin', 'data_entry_operator']);
+                }) ?? $creator;
 
                 return [
                     'id' => $farmer?->id,
@@ -189,12 +201,12 @@ class Conversation extends Model
             }
 
             // Find practitioner
-            $practitioner = $this->users()->whereHas('roles', function ($q) {
-                $q->whereIn('name', ['veterinary_doctor', 'consultant']);
-            })->first();
+            $practitioner = $users->first(function ($u) {
+                return $u->hasAnyRole(['veterinary_doctor', 'consultant']);
+            });
 
             if (! $practitioner && $this->context_type === 'service_request') {
-                $sr = ServiceRequest::find($this->context_id);
+                $sr = ServiceRequest::with('assignedPractitioner.roles')->find($this->context_id);
                 $practitioner = $sr?->assignedPractitioner;
             }
 
@@ -207,9 +219,9 @@ class Conversation extends Model
 
             // If viewer is Admin/DEO staff:
             if ($isStaff) {
-                $farmer = $this->users()->whereDoesntHave('roles', function ($q) {
-                    $q->whereIn('name', ['veterinary_doctor', 'consultant', 'admin', 'data_entry_operator']);
-                })->first() ?? $this->creator;
+                $farmer = $users->first(function ($u) {
+                    return ! $u->hasAnyRole(['veterinary_doctor', 'consultant', 'admin', 'data_entry_operator']);
+                }) ?? $creator;
 
                 $pName = $practitioner?->name ?? 'Specialist';
                 $fName = $farmer?->name ?? 'Farmer';
@@ -250,7 +262,9 @@ class Conversation extends Model
      */
     public function unreadCountFor(User $user): int
     {
-        $participant = $this->participants()->where('user_id', $user->id)->first();
+        $participant = $this->relationLoaded('participants')
+            ? $this->participants->firstWhere('user_id', $user->id)
+            : $this->participants()->where('user_id', $user->id)->first();
 
         $query = $this->messages()
             ->where('sender_id', '!=', $user->id)
