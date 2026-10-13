@@ -33,16 +33,19 @@ class ProductionSeeder extends Seeder
         $this->command?->info('4. Seeding Pourashavas (Municipalities)...');
         $this->call(PourashavaSeeder::class);
 
-        $this->command?->info('5. Seeding Aquaculture Catalog Products, Specifications & Variants...');
+        $this->command?->info('5. Seeding / Updating System Taxonomies & Bilingual Labels...');
+        $this->call(TaxonomySeeder::class);
+
+        $this->command?->info('6. Seeding Aquaculture Catalog Products, Specifications & Variants...');
         $this->call(ProductSeeder::class);
 
-        $this->command?->info('6. Seeding Bilingual (English & Bengali) Product Content...');
+        $this->command?->info('7. Seeding Bilingual (English & Bengali) Product Content...');
         $this->call(BilingualProductSeeder::class);
 
-        $this->command?->info('7. Seeding Canned Support & Clinical Consultation Responses...');
+        $this->command?->info('8. Seeding Canned Support & Clinical Consultation Responses...');
         $this->call(CannedResponseSeeder::class);
 
-        $this->command?->info('8. Ensuring Initial Super-Admin Account exists...');
+        $this->command?->info('9. Ensuring Initial Super-Admin Account exists...');
         $adminEmail = env('ADMIN_DEFAULT_EMAIL', 'admin@farmlink.com');
         $adminPhone = env('ADMIN_DEFAULT_PHONE', '01700000001');
         $adminPassword = env('ADMIN_DEFAULT_PASSWORD', 'password');

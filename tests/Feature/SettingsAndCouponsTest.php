@@ -391,6 +391,39 @@ class SettingsAndCouponsTest extends TestCase
         $this->assertTrue(collect($facilitiesBn)->contains(fn ($f) => str_contains($f, 'বিদ্যুৎ')));
     }
 
+    public function test_taxonomy_seeder_runs_idempotently_with_bilingual_data(): void
+    {
+        // 1. Run TaxonomySeeder
+        $this->seed(\Database\Seeders\TaxonomySeeder::class);
+
+        // Verify canonical taxonomies exist with Bangla names and descriptions
+        $this->assertDatabaseHas('taxonomies', [
+            'type' => 'farm_type',
+            'slug' => 'own',
+            'name' => 'Own Land',
+            'name_bn' => 'নিজস্ব জমি / ঘের',
+        ]);
+
+        $this->assertDatabaseHas('taxonomies', [
+            'type' => 'culture_type',
+            'slug' => 'bagda',
+            'name_bn' => 'বাগদা চিংড়ি (Black Tiger)',
+        ]);
+
+        $this->assertDatabaseHas('taxonomies', [
+            'type' => 'farming_system',
+            'slug' => 'intensive',
+            'name_bn' => 'নিবিড় চাষ পদ্ধতি (Intensive)',
+        ]);
+
+        $initialCount = Taxonomy::count();
+        $this->assertGreaterThanOrEqual(40, $initialCount);
+
+        // 2. Run TaxonomySeeder a second time (verify idempotency - no duplicate rows or errors)
+        $this->seed(\Database\Seeders\TaxonomySeeder::class);
+        $this->assertEquals($initialCount, Taxonomy::count());
+    }
+
     public function test_payment_methods_active_toggle(): void
     {
         $method = PaymentMethod::create([

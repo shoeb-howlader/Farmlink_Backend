@@ -77,7 +77,10 @@ class DatabaseSeeder extends Seeder
         );
         $consultant->syncRoles(['consultant']);
 
-        // 6. Products (25 distinct aquaculture products across 5 categories with bilingual attributes)
+        // 6. Taxonomies (Canonical aquaculture taxonomies with bilingual attributes)
+        $this->call(TaxonomySeeder::class);
+
+        // 7. Products (25 distinct aquaculture products across 5 categories with bilingual attributes)
         $this->call(ProductSeeder::class);
         $this->call(BilingualProductSeeder::class);
         $products = Product::all();
