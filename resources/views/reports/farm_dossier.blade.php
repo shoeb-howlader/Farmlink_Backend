@@ -5,19 +5,9 @@
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
     <title>Farm Profile Dossier - FL-DOS-{{ date('Y') }}-{{ str_pad($farm->id, 5, '0', STR_PAD_LEFT) }}</title>
     <style>
-        @font-face {
-            font-family: 'Kalpurush';
-            src: url('data:font/truetype;charset=utf-8;base64,{{ file_exists(storage_path("fonts/kalpurush.ttf")) ? base64_encode(file_get_contents(storage_path("fonts/kalpurush.ttf"))) : "" }}') format('truetype');
-            font-weight: normal;
-            font-style: normal;
-        }
-        @page {
-            margin: 20px 26px;
-            size: a4 portrait;
-        }
         body {
-            font-family: 'Kalpurush', 'DejaVu Sans', sans-serif;
-            font-size: 9.5px;
+            font-family: 'kalpurush', 'DejaVu Sans', sans-serif;
+            font-size: 8.5pt;
             line-height: 1.35;
             color: #1e293b;
             margin: 0;
@@ -26,31 +16,30 @@
         .header-table {
             width: 100%;
             border-bottom: 2px solid #059669;
-            padding-bottom: 10px;
-            margin-bottom: 12px;
+            padding-bottom: 8px;
+            margin-bottom: 10px;
         }
         .logo-title {
-            font-size: 19px;
-            font-weight: 800;
+            font-size: 18pt;
+            font-weight: bold;
             color: #059669;
             letter-spacing: -0.5px;
             margin: 0;
         }
         .logo-subtitle {
-            font-size: 8px;
+            font-size: 7.5pt;
             color: #64748b;
-            text-transform: uppercase;
             letter-spacing: 0.8px;
             margin-top: 1px;
         }
         .dossier-title-bn {
-            font-size: 12px;
-            font-weight: 700;
+            font-size: 11pt;
+            font-weight: bold;
             color: #047857;
             margin-top: 3px;
         }
         .company-meta {
-            font-size: 8.5px;
+            font-size: 8pt;
             color: #475569;
             text-align: right;
             line-height: 1.3;
@@ -58,65 +47,62 @@
         .ref-badge {
             display: inline-block;
             background-color: #ecfdf5;
-            border: 1px solid #10b981;
             color: #047857;
-            font-size: 9px;
-            font-weight: 700;
-            padding: 2px 7px;
+            font-size: 8pt;
+            font-weight: bold;
+            padding: 2px 6px;
             border-radius: 3px;
             letter-spacing: 0.5px;
         }
         .compliance-pill {
             display: inline-block;
             background-color: #eff6ff;
-            border: 1px solid #93c5fd;
             color: #1d4ed8;
-            font-size: 8px;
-            font-weight: 600;
-            padding: 2px 6px;
+            font-size: 7.5pt;
+            font-weight: bold;
+            padding: 2px 5px;
             border-radius: 3px;
             margin-top: 2px;
         }
         .info-table {
             width: 100%;
-            margin-bottom: 10px;
+            margin-bottom: 8px;
+            border-collapse: separate;
         }
         .info-col {
             width: 50%;
             vertical-align: top;
-            padding: 6px 9px;
+            padding: 6px 8px;
             background-color: #f8fafc;
             border: 1px solid #e2e8f0;
             border-radius: 4px;
         }
         .info-col-title {
-            font-size: 8.5px;
+            font-size: 8pt;
             font-weight: bold;
-            text-transform: uppercase;
             color: #059669;
-            margin-bottom: 5px;
+            margin-bottom: 4px;
             border-bottom: 1px solid #cbd5e1;
             padding-bottom: 2px;
         }
         .info-item {
-            margin-bottom: 2.5px;
-            font-size: 9px;
+            margin-bottom: 2px;
+            font-size: 8pt;
         }
         .info-label {
             color: #64748b;
             font-weight: normal;
         }
         .info-value {
-            font-weight: 600;
+            font-weight: bold;
             color: #0f172a;
         }
         .section-title {
-            font-size: 10px;
-            font-weight: 700;
+            font-size: 9pt;
+            font-weight: bold;
             color: #0f172a;
-            margin-top: 10px;
+            margin-top: 8px;
             margin-bottom: 4px;
-            text-transform: uppercase;
             letter-spacing: 0.3px;
             border-left: 3px solid #059669;
             padding-left: 5px;
@@ -124,23 +110,22 @@
         .data-table {
             width: 100%;
             border-collapse: collapse;
-            margin-bottom: 10px;
+            margin-bottom: 8px;
         }
         .data-table th {
             background-color: #f1f5f9;
             color: #334155;
-            font-size: 8.5px;
-            font-weight: 700;
-            text-transform: uppercase;
-            padding: 5px 6px;
+            font-size: 7.5pt;
+            font-weight: bold;
+            padding: 4px 6px;
             border-top: 1px solid #cbd5e1;
             border-bottom: 1px solid #cbd5e1;
             text-align: left;
         }
         .data-table td {
-            padding: 5px 6px;
+            padding: 4px 6px;
             border-bottom: 1px solid #e2e8f0;
-            font-size: 8.5px;
+            font-size: 7.5pt;
             vertical-align: top;
         }
         .data-table tr:nth-child(even) td {
@@ -150,8 +135,7 @@
             display: inline-block;
             background-color: #ecfdf5;
             color: #059669;
-            border: 1px solid #a7f3d0;
-            font-size: 7.5px;
+            font-size: 7pt;
             padding: 1px 4px;
             border-radius: 2px;
             font-weight: bold;
@@ -160,8 +144,7 @@
             display: inline-block;
             background-color: #fffbeb;
             color: #d97706;
-            border: 1px solid #fde68a;
-            font-size: 7.5px;
+            font-size: 7pt;
             padding: 1px 4px;
             border-radius: 2px;
             font-weight: bold;
@@ -170,8 +153,7 @@
             display: inline-block;
             background-color: #fef2f2;
             color: #dc2626;
-            border: 1px solid #fecaca;
-            font-size: 7.5px;
+            font-size: 7pt;
             padding: 1px 4px;
             border-radius: 2px;
             font-weight: bold;
@@ -179,37 +161,37 @@
         .metric-cards-table {
             width: 100%;
             margin-bottom: 8px;
+            border-collapse: separate;
         }
         .metric-card {
             width: 25%;
             background-color: #f0fdf4;
             border: 1px solid #bbf7d0;
             border-radius: 4px;
-            padding: 5px 6px;
+            padding: 4px 6px;
             text-align: center;
         }
         .metric-label {
-            font-size: 7.5px;
+            font-size: 7pt;
             color: #166534;
-            text-transform: uppercase;
-            font-weight: 600;
+            font-weight: bold;
         }
         .metric-value {
-            font-size: 13px;
-            font-weight: 800;
+            font-size: 11pt;
+            font-weight: bold;
             color: #14532d;
             margin-top: 1px;
         }
         .metric-unit {
-            font-size: 7.5px;
+            font-size: 7pt;
             font-weight: normal;
             color: #15803d;
         }
         .footer-table {
             width: 100%;
-            margin-top: 16px;
+            margin-top: 12px;
             border-top: 1px solid #cbd5e1;
-            padding-top: 10px;
+            padding-top: 8px;
         }
         .sign-col {
             text-align: center;
@@ -218,27 +200,26 @@
         }
         .sign-line {
             border-bottom: 1px dashed #94a3b8;
-            margin: 28px auto 4px auto;
+            margin: 22px auto 4px auto;
             width: 75%;
         }
         .sign-role {
-            font-size: 8px;
+            font-size: 7.5pt;
             font-weight: bold;
             color: #334155;
-            text-transform: uppercase;
         }
         .sign-desc {
-            font-size: 7px;
+            font-size: 6.5pt;
             color: #64748b;
         }
         .notice-box {
             background-color: #f8fafc;
             border: 1px solid #e2e8f0;
             border-left: 3px solid #059669;
-            padding: 5px 8px;
-            font-size: 7.5px;
+            padding: 4px 7px;
+            font-size: 7pt;
             color: #475569;
-            margin-top: 10px;
+            margin-top: 8px;
             line-height: 1.35;
         }
     </style>
@@ -322,7 +303,7 @@
                             $lng = $farm->gps_lng ?? $farm->gps_long;
                         @endphp
                         @if($lat && $lng)
-                            {{ number_format($lat, 6) }}° N, {{ number_format($lng, 6) }}° E
+                            {{ number_format($lat, 6) }}<span style="font-family: 'DejaVu Sans', sans-serif;">&deg;</span> N, {{ number_format($lng, 6) }}<span style="font-family: 'DejaVu Sans', sans-serif;">&deg;</span> E
                         @else
                             উপগ্রহ মানচিত্রে নিবন্ধিত (অক্ষাংশ/দ্রাঘিমাংশ অপেক্ষমান)
                         @endif
@@ -519,7 +500,7 @@
                         <td><strong>{{ $telemetry->dissolved_oxygen !== null ? number_format($telemetry->dissolved_oxygen, 1) . ' mg/L' : '—' }}</strong></td>
                         <td>{{ $telemetry->ph !== null ? number_format($telemetry->ph, 1) : '—' }}</td>
                         <td>{{ $telemetry->salinity !== null ? number_format($telemetry->salinity, 1) . ' ppt' : '—' }}</td>
-                        <td>{{ $telemetry->temperature !== null ? number_format($telemetry->temperature, 1) . ' °C' : '—' }}</td>
+                        <td>{{ $telemetry->temperature !== null ? number_format($telemetry->temperature, 1) . ' <span style="font-family: \'DejaVu Sans\', sans-serif;">&deg;</span>C' : '—' }}</td>
                         <td>
                             @if($alert['status'] === 'optimal' || $alert['status'] === 'normal')
                                 <span class="badge-green">অনুকূল (Optimal)</span>
