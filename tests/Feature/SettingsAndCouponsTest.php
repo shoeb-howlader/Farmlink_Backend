@@ -532,4 +532,46 @@ class SettingsAndCouponsTest extends TestCase
         $resAdminMe->assertOk()
             ->assertJsonPath('data.role_default_locale', 'en');
     }
+
+    public function test_admin_can_update_guarded_branding_and_appearance_presets(): void
+    {
+        // 1. Initial public settings has default emerald branding and hind_siliguri font
+        $resPublic = $this->getJson('/api/v1/settings/public');
+        $resPublic->assertOk()
+            ->assertJsonPath('data.brand_primary_color', 'emerald')
+            ->assertJsonPath('data.brand_font_preset', 'hind_siliguri')
+            ->assertJsonPath('data.default_appearance_mode', 'system');
+
+        // 2. Admin updates branding to teal with noto_sans_bengali font
+        $payload = [
+            'group' => 'branding',
+            'settings' => [
+                'brand_primary_color' => 'teal',
+                'brand_font_preset' => 'noto_sans_bengali',
+                'default_appearance_mode' => 'light',
+            ],
+        ];
+
+        $resAdmin = $this->actingAs($this->admin)->putJson('/api/v1/admin/settings', $payload);
+        $resAdmin->assertOk()
+            ->assertJsonPath('success', true);
+
+        // 3. Public settings reflects updated branding
+        $resPublicUpdated = $this->getJson('/api/v1/settings/public');
+        $resPublicUpdated->assertOk()
+            ->assertJsonPath('data.brand_primary_color', 'teal')
+            ->assertJsonPath('data.brand_font_preset', 'noto_sans_bengali')
+            ->assertJsonPath('data.default_appearance_mode', 'light');
+
+        // 4. Invalid palette or font preset is rejected with 422
+        $invalidPayload = [
+            'group' => 'branding',
+            'settings' => [
+                'brand_primary_color' => 'hotpink',
+                'brand_font_preset' => 'comic_sans',
+            ],
+        ];
+        $resInvalid = $this->actingAs($this->admin)->putJson('/api/v1/admin/settings', $invalidPayload);
+        $resInvalid->assertStatus(422);
+    }
 }

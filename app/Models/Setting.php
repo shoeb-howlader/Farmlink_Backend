@@ -43,7 +43,7 @@ class Setting extends Model
         static::$memoized = null;
         try {
             Cache::forget(self::CACHE_KEY);
-            $groups = ['general', 'delivery', 'notifications', 'system', 'fraud', 'localization'];
+            $groups = ['general', 'delivery', 'notifications', 'system', 'fraud', 'localization', 'branding'];
             foreach ($groups as $grp) {
                 Cache::forget("app_settings_group_{$grp}");
             }

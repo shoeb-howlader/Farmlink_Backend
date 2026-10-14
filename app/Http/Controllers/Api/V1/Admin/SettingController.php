@@ -49,7 +49,7 @@ class SettingController extends ApiController
     public function update(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'group' => ['nullable', 'string', 'in:general,delivery,notifications,system,fraud,localization'],
+            'group' => ['nullable', 'string', 'in:general,delivery,notifications,system,fraud,localization,branding'],
             'settings' => ['required', 'array'],
             'settings.site_name' => ['nullable', 'string', 'max:255'],
             'settings.site_logo_url' => ['nullable', 'string', 'max:500'],
@@ -75,6 +75,9 @@ class SettingController extends ApiController
             'settings.default_locale_deo' => ['nullable', 'string', 'in:bn,en'],
             'settings.default_locale_vet' => ['nullable', 'string', 'in:bn,en'],
             'settings.default_locale_consultant' => ['nullable', 'string', 'in:bn,en'],
+            'settings.brand_primary_color' => ['nullable', 'string', 'in:emerald,teal,cyan,blue'],
+            'settings.brand_font_preset' => ['nullable', 'string', 'in:hind_siliguri,noto_sans_bengali'],
+            'settings.default_appearance_mode' => ['nullable', 'string', 'in:system,light,dark'],
         ]);
 
         $group = $validated['group'] ?? 'general';
@@ -85,6 +88,8 @@ class SettingController extends ApiController
             $itemGroup = $group;
             if (in_array($key, ['flat_delivery_fee', 'free_delivery_threshold'])) {
                 $itemGroup = 'delivery';
+            } elseif (str_starts_with($key, 'brand_') || $key === 'default_appearance_mode') {
+                $itemGroup = 'branding';
             } elseif (str_starts_with($key, 'fraud_') || str_starts_with($key, 'bulk_cod_') || str_starts_with($key, 'cod_max_') || str_starts_with($key, 'advance_delivery_') || str_starts_with($key, 'auto_confirm_') || str_starts_with($key, 'ip_geo')) {
                 $itemGroup = 'fraud';
             } elseif (str_starts_with($key, 'default_') || str_starts_with($key, 'locale_')) {
@@ -175,6 +180,9 @@ class SettingController extends ApiController
                 : null,
             'pwa_dismissal_duration_days' => (int) Setting::get('pwa_dismissal_duration_days', 30),
             'default_public_locale' => Setting::get('default_public_locale', 'bn'),
+            'brand_primary_color' => Setting::get('brand_primary_color', 'emerald'),
+            'brand_font_preset' => Setting::get('brand_font_preset', 'hind_siliguri'),
+            'default_appearance_mode' => Setting::get('default_appearance_mode', 'system'),
             'default_role_locales' => [
                 'farmer' => Setting::get('default_locale_farmer', 'bn'),
                 'admin' => Setting::get('default_locale_admin', 'en'),
