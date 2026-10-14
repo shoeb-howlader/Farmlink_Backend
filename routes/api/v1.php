@@ -212,6 +212,9 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Admin & Staff routes (Shared between Admin and Data Entry Operator)
     Route::middleware('role:admin|data_entry_operator')->prefix('admin')->as('admin.')->group(function () {
+        // Dashboard Summary & Analytics
+        Route::get('/dashboard/summary', [\App\Http\Controllers\Api\V1\Admin\DashboardController::class, 'summary'])->name('dashboard.summary');
+
         // Shared Support Inbox
         Route::get('/support-inbox', [ChatController::class, 'index'])->defaults('inbox', true)->name('support-inbox.index');
 

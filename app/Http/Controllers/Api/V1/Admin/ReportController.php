@@ -146,6 +146,31 @@ class ReportController extends ApiController
             ->orderByDesc('count')
             ->get();
 
+        // Monthly registration trend for the last 6 months
+        $sixMonthsAgo = now()->subMonths(5)->startOfMonth();
+        $monthlyRegistrations = (clone $farmersQuery)
+            ->where('created_at', '>=', $sixMonthsAgo)
+            ->select(
+                DB::raw('DATE_FORMAT(created_at, "%Y-%m") as month_key'),
+                DB::raw('count(*) as count')
+            )
+            ->groupBy('month_key')
+            ->orderBy('month_key')
+            ->get()
+            ->keyBy('month_key');
+
+        $growthTimeline = [];
+        for ($i = 5; $i >= 0; $i--) {
+            $month = now()->subMonths($i);
+            $key = $month->format('Y-m');
+            $label = $month->format('M Y');
+            $growthTimeline[] = [
+                'month_key' => $key,
+                'label' => $label,
+                'new_farmers' => (int) ($monthlyRegistrations->get($key)?->count ?? 0),
+            ];
+        }
+
         return $this->successResponse([
             'metrics' => [
                 'total_farmers' => $totalFarmers,
@@ -154,6 +179,7 @@ class ReportController extends ApiController
                 'total_animals' => (int) $totalAnimals,
             ],
             'district_breakdown' => $districtBreakdown,
+            'growth_timeline' => $growthTimeline,
         ], 'Farmers report generated successfully');
     }
 
