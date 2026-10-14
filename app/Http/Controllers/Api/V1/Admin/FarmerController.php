@@ -27,6 +27,24 @@ class FarmerController extends ApiController
         Gate::authorize('viewAdmin', \App\Models\Farm::class);
 
         $query = User::role('farmer')
+            ->select([
+                'id',
+                'name',
+                'phone',
+                'email',
+                'district',
+                'gender',
+                'is_active',
+                'is_blacklisted',
+                'blacklist_reason',
+                'cod_blocked',
+                'consultations_blocked',
+                'refused_cod_orders_count',
+                'profile_image_path',
+                'profile_image_thumbnail_path',
+                'avatar_url',
+                'created_at',
+            ])
             ->withCount(['farms', 'orders', 'farmVetRecords', 'farmConsultantRecords'])
             ->withSum('orders', 'total')
             ->withSum('farms', 'total_area');

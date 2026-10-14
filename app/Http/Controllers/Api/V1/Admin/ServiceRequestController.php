@@ -408,7 +408,7 @@ class ServiceRequestController extends ApiController
             : 0;
 
         // Calculate Follow-up completion rate
-        $today = Carbon::today();
+        $today = Carbon::today()->toDateString();
         $dueVetFollowUps = \App\Models\VetRecord::whereNotNull('next_follow_up')
             ->whereDate('next_follow_up', '<=', $today)
             ->with(['followUpRecords', 'followUpServiceRequest'])

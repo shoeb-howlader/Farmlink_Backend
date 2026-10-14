@@ -46,6 +46,19 @@ class ServiceRequest extends Model
         ];
     }
 
+    /**
+     * Boot model events for automatic cache invalidation.
+     */
+    protected static function booted(): void
+    {
+        static::saved(function () {
+            \App\Services\DashboardCacheService::flush();
+        });
+        static::deleted(function () {
+            \App\Services\DashboardCacheService::flush();
+        });
+    }
+
     public function farm(): BelongsTo
     {
         return $this->belongsTo(Farm::class);

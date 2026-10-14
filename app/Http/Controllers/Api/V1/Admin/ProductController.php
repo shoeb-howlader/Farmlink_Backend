@@ -27,7 +27,7 @@ class ProductController extends ApiController
         Gate::authorize('viewAdmin', \App\Models\Order::class);
 
         $query = Product::query()
-            ->with(['variants', 'images', 'specs', 'documents'])
+            ->with(['variants', 'images'])
             ->withAvg('reviews', 'rating')
             ->withCount('reviews');
 

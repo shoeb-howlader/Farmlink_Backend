@@ -24,6 +24,15 @@ class PaymentMethod extends Model
     }
 
     /**
+     * Boot model events for automatic cache invalidation.
+     */
+    protected static function booted(): void
+    {
+        static::saved(fn () => \Illuminate\Support\Facades\Cache::forget('payment_methods.active'));
+        static::deleted(fn () => \Illuminate\Support\Facades\Cache::forget('payment_methods.active'));
+    }
+
+    /**
      * Scope query to active payment methods ordered by sort_order.
      */
     public function scopeActive(Builder $query): Builder

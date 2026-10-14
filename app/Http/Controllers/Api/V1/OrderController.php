@@ -438,18 +438,28 @@ class OrderController extends ApiController
     {
         Gate::authorize('view', $order);
 
+        $order->load([
+            'items.product',
+            'items.variant',
+            'user',
+            'farm',
+            'division',
+            'districtData',
+            'upazilaData',
+            'unionData',
+            'pourashavaData',
+            'payment',
+        ]);
+
+        if ($order->items->isNotEmpty()) {
+            $reviews = \App\Models\ProductReview::where('order_id', $order->id)->get()->keyBy('product_id');
+            foreach ($order->items as $item) {
+                $item->setRelation('review', $reviews->get($item->product_id));
+            }
+        }
+
         return $this->successResponse(
-            new OrderResource($order->load([
-                'items.product',
-                'items.variant',
-                'user',
-                'farm',
-                'division',
-                'districtData',
-                'upazilaData',
-                'unionData',
-                'pourashavaData'
-            ])),
+            new OrderResource($order),
             'Order retrieved successfully'
         );
     }

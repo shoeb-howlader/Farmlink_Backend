@@ -57,6 +57,19 @@ class Product extends Model
     }
 
     /**
+     * Boot model events for automatic cache invalidation.
+     */
+    protected static function booted(): void
+    {
+        static::saved(function () {
+            \Illuminate\Support\Facades\Cache::forget('storefront_featured_products');
+        });
+        static::deleted(function () {
+            \Illuminate\Support\Facades\Cache::forget('storefront_featured_products');
+        });
+    }
+
+    /**
      * Get the variants for this product.
      *
      * @return HasMany<ProductVariant, $this>

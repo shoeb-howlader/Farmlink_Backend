@@ -235,7 +235,8 @@ class ServiceRequestController extends ApiController
         }
 
         $vetRecords = $farm->vetRecords()
-            ->with(['vet', 'photos'])
+            ->with('vet')
+            ->withCount('photos')
             ->latest('visit_date')
             ->limit(5)
             ->get()
@@ -254,13 +255,14 @@ class ServiceRequestController extends ApiController
                     'next_follow_up' => $record->next_follow_up ? $record->next_follow_up->toDateString() : null,
                     'has_follow_up' => !empty($record->next_follow_up),
                     'report_url' => "/vet-records/{$record->id}/visit-report",
-                    'photos_count' => $record->photos->count(),
+                    'photos_count' => (int) ($record->photos_count ?? 0),
                     'is_originating' => $isOriginating,
                 ];
             });
 
         $consultantRecords = $farm->consultantRecords()
-            ->with(['consultant', 'photos'])
+            ->with('consultant')
+            ->withCount('photos')
             ->latest('visit_date')
             ->limit(5)
             ->get()
@@ -279,7 +281,7 @@ class ServiceRequestController extends ApiController
                     'next_follow_up' => $record->next_follow_up ? $record->next_follow_up->toDateString() : null,
                     'has_follow_up' => !empty($record->next_follow_up),
                     'report_url' => "/consultant-records/{$record->id}/visit-report",
-                    'photos_count' => $record->photos->count(),
+                    'photos_count' => (int) ($record->photos_count ?? 0),
                     'is_originating' => $isOriginating,
                 ];
             });

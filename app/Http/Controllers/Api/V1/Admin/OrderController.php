@@ -19,7 +19,7 @@ class OrderController extends ApiController
     {
         Gate::authorize('viewAdmin', Order::class);
 
-        $query = Order::with(['items.product.images', 'items.product.variants', 'items.variant', 'user.roles', 'payment'])->latest();
+        $query = Order::with(['items.product.variants', 'items.variant', 'user.roles', 'payment'])->latest();
 
         // Filter by status (single, comma-separated, or workflow tab presets)
         if ($request->filled('status') && $request->query('status') !== 'all') {
@@ -42,13 +42,13 @@ class OrderController extends ApiController
             $query->where('user_id', $request->query('user_id'));
         }
 
-        // Filter by date range (from / to)
+        // Filter by date range (from / to) using sargable range comparison to hit index
         if ($request->filled('date_from')) {
-            $query->whereDate('created_at', '>=', $request->query('date_from'));
+            $query->where('created_at', '>=', $request->query('date_from') . ' 00:00:00');
         }
 
         if ($request->filled('date_to')) {
-            $query->whereDate('created_at', '<=', $request->query('date_to'));
+            $query->where('created_at', '<=', $request->query('date_to') . ' 23:59:59');
         }
 
         // Fraud & Risk Filters
@@ -145,8 +145,17 @@ class OrderController extends ApiController
             $order->setRelation('recent_attempts', $recentAttempts);
         }
 
+        $order->load(['items.product', 'items.variant', 'user', 'farm', 'payment']);
+
+        if ($order->items->isNotEmpty()) {
+            $reviews = \App\Models\ProductReview::where('order_id', $order->id)->get()->keyBy('product_id');
+            foreach ($order->items as $item) {
+                $item->setRelation('review', $reviews->get($item->product_id));
+            }
+        }
+
         return $this->successResponse(
-            new OrderResource($order->load(['items.product', 'user', 'payment'])),
+            new OrderResource($order),
             'Order details retrieved successfully'
         );
     }

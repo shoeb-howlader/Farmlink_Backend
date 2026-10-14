@@ -25,6 +25,8 @@ class Taxonomy extends Model
         ];
     }
 
+    protected static ?array $memoryLookupMap = null;
+
     /**
      * Boot model events for automatic cache invalidation.
      */
@@ -39,6 +41,7 @@ class Taxonomy extends Model
      */
     public static function clearCache(): void
     {
+        static::$memoryLookupMap = null;
         \Illuminate\Support\Facades\Cache::forget('taxonomies.active_grouped');
         \Illuminate\Support\Facades\Cache::forget('taxonomies.lookup_map');
 
@@ -109,7 +112,11 @@ class Taxonomy extends Model
      */
     public static function getLookupMapCached(): array
     {
-        return \Illuminate\Support\Facades\Cache::remember('taxonomies.lookup_map', 86400, function () {
+        if (static::$memoryLookupMap !== null) {
+            return static::$memoryLookupMap;
+        }
+
+        return static::$memoryLookupMap = \Illuminate\Support\Facades\Cache::remember('taxonomies.lookup_map', 86400, function () {
             $all = static::where('is_active', true)->whereNotNull('name_bn')->get();
             $map = [];
             foreach ($all as $item) {

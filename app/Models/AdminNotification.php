@@ -62,7 +62,7 @@ class AdminNotification extends Model
 
         if ($userId) {
             $url = $data['url'] ?? $data['action_url'] ?? '/notifications';
-            \App\Services\WebPushService::sendToUser($userId, $title, $message, $url, $data);
+            \App\Jobs\SendWebPushNotificationJob::dispatch($userId, $title, $message, $url, $data);
         }
 
         return $notification;

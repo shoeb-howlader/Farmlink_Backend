@@ -9,6 +9,7 @@ use App\Models\OrderItem;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -101,11 +102,11 @@ class ReportController extends ApiController
             $handle = fopen('php://output', 'w');
             fputcsv($handle, ['Order ID', 'Date', 'Customer Name', 'Customer Phone', 'Status', 'Total Amount', 'Items Count']);
 
-            Order::with(['user', 'items'])
-                ->whereDate('created_at', '>=', $dateFrom)
-                ->whereDate('created_at', '<=', $dateTo)
-                ->latest('id')
-                ->chunk(100, function ($orders) use ($handle) {
+            Order::select(['id', 'user_id', 'status', 'total', 'created_at'])
+                ->with(['user:id,name,phone'])
+                ->withCount('items')
+                ->whereBetween('created_at', ["{$dateFrom} 00:00:00", "{$dateTo} 23:59:59"])
+                ->chunkById(250, function ($orders) use ($handle) {
                     foreach ($orders as $order) {
                         fputcsv($handle, [
                             $order->id,
@@ -114,7 +115,7 @@ class ReportController extends ApiController
                             $order->user?->phone ?? 'N/A',
                             $order->status,
                             $order->total,
-                            $order->items->count(),
+                            $order->items_count,
                         ]);
                     }
                 });
@@ -148,10 +149,14 @@ class ReportController extends ApiController
 
         // Monthly registration trend for the last 6 months
         $sixMonthsAgo = now()->subMonths(5)->startOfMonth();
+        $dateExpr = DB::connection()->getDriverName() === 'sqlite'
+            ? 'strftime("%Y-%m", created_at) as month_key'
+            : 'DATE_FORMAT(created_at, "%Y-%m") as month_key';
+
         $monthlyRegistrations = (clone $farmersQuery)
             ->where('created_at', '>=', $sixMonthsAgo)
             ->select(
-                DB::raw('DATE_FORMAT(created_at, "%Y-%m") as month_key'),
+                DB::raw($dateExpr),
                 DB::raw('count(*) as count')
             )
             ->groupBy('month_key')
@@ -205,9 +210,10 @@ class ReportController extends ApiController
             fputcsv($handle, ['Farmer ID', 'Name', 'Phone', 'Email', 'District', 'Farms Count', 'Total Animals', 'Status', 'Registered At']);
 
             User::role('farmer')
-                ->with(['farms'])
-                ->latest('id')
-                ->chunk(100, function ($farmers) use ($handle) {
+                ->select(['id', 'name', 'phone', 'email', 'district', 'is_active', 'created_at'])
+                ->withCount('farms')
+                ->withSum('farms', 'pond_count')
+                ->chunkById(250, function ($farmers) use ($handle) {
                     foreach ($farmers as $farmer) {
                         fputcsv($handle, [
                             $farmer->id,
@@ -215,8 +221,8 @@ class ReportController extends ApiController
                             $farmer->phone,
                             $farmer->email ?? '',
                             $farmer->district ?? '',
-                            $farmer->farms->count(),
-                            $farmer->farms->sum('pond_count'),
+                            $farmer->farms_count ?? 0,
+                            (int) ($farmer->farms_sum_pond_count ?? 0),
                             ($farmer->is_active ?? true) ? 'Active' : 'Inactive',
                             $farmer->created_at?->toDateTimeString(),
                         ]);
@@ -240,43 +246,48 @@ class ReportController extends ApiController
         $year = $request->integer('year', $now->year);
         $month = $request->integer('month', $now->month);
 
-        $topFarmers = User::role('farmer')
-            ->whereHas('orders', function ($q) use ($year, $month) {
-                $q->whereMonth('created_at', $month)
-                    ->whereYear('created_at', $year)
-                    ->whereNotIn('status', ['cancelled', 'rejected', 'returned'])
-                    ->where('total', '>', 0);
-            })
-            ->withSum([
-                'orders' => function ($q) use ($year, $month) {
-                    $q->whereMonth('created_at', $month)
-                        ->whereYear('created_at', $year)
-                        ->whereNotIn('status', ['cancelled', 'rejected', 'returned']);
-                }
-            ], 'total')
-            ->withCount([
-                'orders' => function ($q) use ($year, $month) {
-                    $q->whereMonth('created_at', $month)
-                        ->whereYear('created_at', $year)
-                        ->whereNotIn('status', ['cancelled', 'rejected', 'returned']);
-                }
-            ])
-            ->orderByDesc('orders_sum_total')
-            ->orderByDesc('orders_count')
-            ->orderBy('id')
-            ->limit(5)
-            ->get()
-            ->map(function (User $farmer) {
-                return [
-                    'id' => $farmer->id,
-                    'name' => $farmer->name,
-                    'phone' => $farmer->phone,
-                    'district' => $farmer->district,
-                    'avatar_url' => $farmer->avatar_url,
-                    'orders_count' => (int) ($farmer->orders_count ?? 0),
-                    'total_spent' => (float) ($farmer->orders_sum_total ?? 0),
-                ];
-            });
+        $cacheKey = "admin_top_farmers_{$year}_{$month}";
+
+        $topFarmers = Cache::remember($cacheKey, 300, function () use ($year, $month) {
+            $startOfMonth = \Carbon\Carbon::createFromDate($year, $month, 1)->startOfMonth();
+            $endOfMonth = $startOfMonth->copy()->endOfMonth();
+
+            return User::role('farmer')
+                ->whereHas('orders', function ($q) use ($startOfMonth, $endOfMonth) {
+                    $q->whereBetween('created_at', [$startOfMonth, $endOfMonth])
+                        ->whereNotIn('status', ['cancelled', 'rejected', 'returned'])
+                        ->where('total', '>', 0);
+                })
+                ->withSum([
+                    'orders' => function ($q) use ($startOfMonth, $endOfMonth) {
+                        $q->whereBetween('created_at', [$startOfMonth, $endOfMonth])
+                            ->whereNotIn('status', ['cancelled', 'rejected', 'returned']);
+                    }
+                ], 'total')
+                ->withCount([
+                    'orders' => function ($q) use ($startOfMonth, $endOfMonth) {
+                        $q->whereBetween('created_at', [$startOfMonth, $endOfMonth])
+                            ->whereNotIn('status', ['cancelled', 'rejected', 'returned']);
+                    }
+                ])
+                ->orderByDesc('orders_sum_total')
+                ->orderByDesc('orders_count')
+                ->orderBy('id')
+                ->limit(5)
+                ->get()
+                ->map(function (User $farmer) {
+                    return [
+                        'id' => $farmer->id,
+                        'name' => $farmer->name,
+                        'phone' => $farmer->phone,
+                        'district' => $farmer->district,
+                        'avatar_url' => $farmer->avatar_url,
+                        'orders_count' => (int) ($farmer->orders_count ?? 0),
+                        'total_spent' => (float) ($farmer->orders_sum_total ?? 0),
+                    ];
+                })
+                ->all();
+        });
 
         return $this->successResponse($topFarmers, 'Top farmers this month retrieved successfully');
     }

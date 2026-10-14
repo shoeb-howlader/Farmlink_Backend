@@ -45,6 +45,19 @@ class User extends Authenticatable
         ];
     }
 
+    /**
+     * Boot model events for automatic cache invalidation.
+     */
+    protected static function booted(): void
+    {
+        static::saved(function () {
+            \App\Services\DashboardCacheService::flush();
+        });
+        static::deleted(function () {
+            \App\Services\DashboardCacheService::flush();
+        });
+    }
+
     public function isPhoneVerified(): bool
     {
         return $this->phone_verified_at !== null;

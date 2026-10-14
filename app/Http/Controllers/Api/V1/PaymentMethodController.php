@@ -12,7 +12,9 @@ class PaymentMethodController extends ApiController
      */
     public function index(): JsonResponse
     {
-        $methods = PaymentMethod::active()->get();
+        $methods = \Illuminate\Support\Facades\Cache::remember('payment_methods.active', 86400, function () {
+            return PaymentMethod::active()->get();
+        });
 
         return $this->successResponse($methods)
             ->header('Cache-Control', 'public, max-age=600, stale-while-revalidate=1800');

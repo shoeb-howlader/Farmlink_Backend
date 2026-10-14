@@ -79,6 +79,14 @@ class Order extends Model
                 $order->invoice_number = static::generateNextInvoiceNumber();
             }
         });
+
+        static::saved(function () {
+            \App\Services\DashboardCacheService::flush();
+        });
+
+        static::deleted(function () {
+            \App\Services\DashboardCacheService::flush();
+        });
     }
 
     /**

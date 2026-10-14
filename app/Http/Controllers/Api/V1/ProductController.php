@@ -17,50 +17,55 @@ class ProductController extends ApiController
         // Featured products mode: return up to 4 editorially-chosen products,
         // falling back to any in-stock products if none are flagged.
         if ($request->boolean('featured')) {
-            $stockScope = function ($q) {
-                $q->where(function ($subQ) {
-                    $subQ->whereHas('variants', function ($vq) {
-                        $vq->where('stock', '>', 0);
-                    })->orWhere(function ($fallbackQ) {
-                        $fallbackQ->whereDoesntHave('variants')->where('stock', '>', 0);
+            $data = \Illuminate\Support\Facades\Cache::remember('storefront_featured_products', 900, function () {
+                $stockScope = function ($q) {
+                    $q->where(function ($subQ) {
+                        $subQ->whereHas('variants', function ($vq) {
+                            $vq->where('stock', '>', 0);
+                        })->orWhere(function ($fallbackQ) {
+                            $fallbackQ->whereDoesntHave('variants')->where('stock', '>', 0);
+                        });
                     });
-                });
-            };
+                };
 
-            $featured = Product::with(['variants', 'images', 'specs', 'documents'])
-                ->withAvg('reviews', 'rating')
-                ->withCount('reviews')
-                ->where('is_active', true)
-                ->where('is_featured', true)
-                ->where($stockScope)
-                ->latest()
-                ->take(4)
-                ->get();
-
-            // Fallback: if fewer than 4 featured products, fill with in-stock
-            if ($featured->count() < 4) {
-                $excludeIds = $featured->pluck('id');
-                $fillers = Product::with(['variants', 'images', 'specs', 'documents'])
+                $featured = Product::with(['variants', 'images'])
                     ->withAvg('reviews', 'rating')
                     ->withCount('reviews')
                     ->where('is_active', true)
+                    ->where('is_featured', true)
                     ->where($stockScope)
-                    ->whereNotIn('id', $excludeIds)
                     ->latest()
-                    ->take(4 - $featured->count())
+                    ->take(4)
                     ->get();
 
-                $featured = $featured->concat($fillers);
-            }
+                // Fallback: if fewer than 4 featured products, fill with in-stock
+                if ($featured->count() < 4) {
+                    $excludeIds = $featured->pluck('id');
+                    $fillers = Product::with(['variants', 'images'])
+                        ->withAvg('reviews', 'rating')
+                        ->withCount('reviews')
+                        ->where('is_active', true)
+                        ->where($stockScope)
+                        ->whereNotIn('id', $excludeIds)
+                        ->latest()
+                        ->take(4 - $featured->count())
+                        ->get();
 
-            return $this->successResponse(
-                ProductResource::collection($featured),
-                'Featured products retrieved successfully'
-            );
+                    $featured = $featured->concat($fillers);
+                }
+
+                return ProductResource::collection($featured)->resolve();
+            });
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Featured products retrieved successfully',
+                'data' => $data,
+            ])->header('Cache-Control', 'public, max-age=300, stale-while-revalidate=900');
         }
 
         $query = Product::where('is_active', true)
-            ->with(['variants', 'images', 'specs', 'documents'])
+            ->with(['variants', 'images'])
             ->withAvg('reviews', 'rating')
             ->withCount('reviews');
 

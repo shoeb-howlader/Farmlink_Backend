@@ -19,14 +19,13 @@ class OrderItemResource extends JsonResource
     public function toArray(Request $request): array
     {
         $price = (float) ($this->price_at_purchase ?? $this->price);
-        $review = null;
-        if ($request->routeIs('*orders.show') || $this->relationLoaded('review')) {
-            $review = $this->relationLoaded('review')
-                ? $this->review
-                : \App\Models\ProductReview::where('order_id', $this->order_id)
+        $review = $this->relationLoaded('review')
+            ? $this->review
+            : ($request->routeIs('*orders.show')
+                ? \App\Models\ProductReview::where('order_id', $this->order_id)
                     ->where('product_id', $this->product_id)
-                    ->first();
-        }
+                    ->first()
+                : null);
 
         return [
             'id' => $this->id,
