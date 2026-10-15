@@ -53,12 +53,12 @@ class SearchController extends ApiController
 
         // 2. Farms (up to 5)
         $farms = Farm::with('farmer')
-            ->where(function ($q) use ($query) {
-                $q->where('farm_name', 'like', "%{$query}%")
-                    ->orWhere('district', 'like', "%{$query}%")
-                    ->orWhere('upazila', 'like', "%{$query}%")
-                    ->orWhereHas('farmer', function ($uq) use ($query) {
-                        $uq->where('name', 'like', "%{$query}%");
+            ->where(function ($q) use ($query, $lowerQuery) {
+                $q->whereRaw('LOWER(farm_name) LIKE ?', ["%{$lowerQuery}%"])
+                    ->orWhereRaw('LOWER(district) LIKE ?', ["%{$lowerQuery}%"])
+                    ->orWhereRaw('LOWER(upazila) LIKE ?', ["%{$lowerQuery}%"])
+                    ->orWhereHas('farmer', function ($uq) use ($lowerQuery) {
+                        $uq->whereRaw('LOWER(name) LIKE ?', ["%{$lowerQuery}%"]);
                     });
             })
             ->limit(5)
@@ -74,13 +74,19 @@ class SearchController extends ApiController
             });
 
         // 3. Orders (up to 5)
+        $cleanId = preg_replace('/[^0-9]/', '', $query);
         $orders = Order::with('user')
-            ->where(function ($q) use ($query) {
-                $q->where('id', $query)
-                    ->orWhereHas('user', function ($uq) use ($query) {
-                        $uq->where('name', 'like', "%{$query}%")
-                            ->orWhere('phone', 'like', "%{$query}%");
-                    });
+            ->where(function ($q) use ($query, $lowerQuery, $cleanId) {
+                if (!empty($cleanId) && strlen($cleanId) <= 18) {
+                    $q->where('id', (int) $cleanId);
+                } else {
+                    $q->whereRaw('1 = 0');
+                }
+
+                $q->orWhereHas('user', function ($uq) use ($query, $lowerQuery) {
+                    $uq->whereRaw('LOWER(name) LIKE ?', ["%{$lowerQuery}%"])
+                        ->orWhere('phone', 'like', "%{$query}%");
+                });
             })
             ->latest()
             ->limit(5)
@@ -96,9 +102,9 @@ class SearchController extends ApiController
             });
 
         // 4. Products (up to 5)
-        $products = Product::where(function ($q) use ($query) {
-                $q->where('name', 'like', "%{$query}%")
-                    ->orWhere('category', 'like', "%{$query}%");
+        $products = Product::where(function ($q) use ($lowerQuery) {
+                $q->whereRaw('LOWER(name) LIKE ?', ["%{$lowerQuery}%"])
+                    ->orWhereRaw('LOWER(category) LIKE ?', ["%{$lowerQuery}%"]);
             })
             ->limit(5)
             ->get()
