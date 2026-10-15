@@ -254,7 +254,7 @@ vendor/bin/pint --test
 
 ---
 
-## 📡 WebRTC Coturn TURN/STUN Server (Coolify & Self-Hosted)
+## 📡 WebRTC Coturn TURN/STUN Server (Production Ubuntu Setup)
 
 ### ❓ Why a TURN Server is Essential
 In rural Bangladesh and developing agricultural corridors, mobile operators (Grameenphone, Banglalink, Robi, Teletalk) utilize **Carrier-Grade NAT (CGNAT)** and symmetric firewall topologies. This prevents direct peer-to-peer WebRTC connections between farmers on mobile networks and remote veterinary doctors or aquaculture consultants.
@@ -263,70 +263,51 @@ In rural Bangladesh and developing agricultural corridors, mobile operators (Gra
 
 ---
 
-### 🐳 Deploying Coturn in Coolify
+### 🖥️ Native Ubuntu Server Installation (Recommended)
 
-You can deploy Coturn in **Coolify** either as a Docker Compose service or a standalone Docker container.
+Running Coturn directly on Ubuntu via `systemd` is the **industry-standard, high-performance architecture** for WebRTC relay servers, as the Linux kernel directly routes high-throughput dynamic UDP streams (`49152–65535`) with zero container/NAT overhead.
 
-#### 1. Docker Compose Configuration (`docker-compose.yml`)
-
-In your Coolify Dashboard:
-1. Navigate to your Project / Environment.
-2. Click **+ New Resource** → **Docker Compose**.
-3. Paste the following configuration:
-
-```yaml
-version: '3.8'
-
-services:
-  coturn:
-    image: coturn/coturn:latest
-    container_name: farmlink-coturn
-    restart: unless-stopped
-    # 'network_mode: host' is essential on Linux for UDP relay performance without NAT degradation
-    network_mode: host
-    volumes:
-      - ./turnserver.conf:/etc/turnserver.conf:ro
-    environment:
-      - DETECT_EXTERNAL_IP=yes
-    command:
-      - -c
-      - /etc/turnserver.conf
+#### 1. Install Coturn on Ubuntu
+```bash
+sudo apt update
+sudo apt install -y coturn
 ```
 
-> **Note**: If your Coolify host does not allow `network_mode: host`, define explicit port bindings:
-> ```yaml
-> ports:
->   - "3478:3478/tcp"
->   - "3478:3478/udp"
->   - "5349:5349/tcp"
->   - "5349:5349/udp"
->   - "49152-49200:49152-49200/udp"
-> ```
+#### 2. Configure `/etc/turnserver.conf`
+Backup the default configuration and paste the production settings:
+```bash
+sudo cp /etc/turnserver.conf /etc/turnserver.conf.backup
+sudo nano /etc/turnserver.conf
+```
 
-#### 2. Coturn Configuration (`turnserver.conf`)
-
-Mount the following configuration in your Coolify service volume (or use [`docker/coturn/turnserver.conf`](file:///c:/laragon/www/Farmlink/Farmlink_Backend/docker/coturn/turnserver.conf)):
-
+Paste the following configuration:
 ```ini
-# Listening endpoints
+# ==============================================================================
+# Coturn TURN/STUN Server Configuration for FarmLink
+# Location: /etc/turnserver.conf
+# ==============================================================================
+
+# Listening endpoints (UDP & TCP)
 listening-port=3478
 tls-listening-port=5349
 
-# Public IP of your Coolify VPS / BDIX server
-external-ip=YOUR_SERVER_PUBLIC_IP
+# Your Ubuntu Server's Public IP address (BDIX / VPS)
+listening-ip=165.99.219.252
+relay-ip=165.99.219.252
+external-ip=165.99.219.252
 
-# WebRTC Realm & Ephemeral REST API Authentication
+# WebRTC Realm & Ephemeral REST API Authentication (RFC 5766)
 realm=farmlinkcare.com
 fingerprint
 use-auth-secret
 static-auth-secret=farmlink_bdix_turn_secret_2026_x89q4w
 stale-nonce=600
 
-# UDP Relay Port Range
+# Dynamic UDP Relay Port Range
 min-port=49152
 max-port=65535
 
-# Security hardening
+# Hardening & Anti-Abuse
 no-cli
 no-multicast-peers
 no-tlsv1
@@ -342,10 +323,14 @@ syslog
 verbose
 ```
 
-#### 3. Firewall Rules (UFW / Security Groups)
+#### 3. Enable the Coturn Daemon
+Edit `/etc/default/coturn` to ensure the daemon is enabled:
+```bash
+sudo sed -i 's/#TURNSERVER_ENABLED=1/TURNSERVER_ENABLED=1/' /etc/default/coturn
+```
 
-Ensure these ports are allowed on your server:
-
+#### 4. Firewall Rules (UFW / Security Groups)
+Open the required WebRTC STUN, TURN, and UDP relay ports:
 ```bash
 # STUN & TURN Default Ports
 sudo ufw allow 3478/tcp
@@ -355,9 +340,17 @@ sudo ufw allow 3478/udp
 sudo ufw allow 5349/tcp
 sudo ufw allow 5349/udp
 
-# Media Relay UDP Ports
+# Dynamic Media Relay UDP Range
 sudo ufw allow 49152:65535/udp
 sudo ufw reload
+```
+
+#### 5. Start and Verify the Service
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable coturn
+sudo systemctl restart coturn
+sudo systemctl status coturn
 ```
 
 ---
