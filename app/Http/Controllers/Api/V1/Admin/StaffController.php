@@ -99,11 +99,81 @@ class StaffController extends ApiController
         Gate::authorize('viewAdmin', Order::class);
 
         $staff->load('roles');
-        $vetCount = $staff->vetRecords()->count();
-        $consultantCount = $staff->consultantRecords()->count();
+        $isDeo = $staff->hasRole('data_entry_operator');
+        $vetCount = $isDeo ? 0 : $staff->vetRecords()->count();
+        $consultantCount = $isDeo ? 0 : $staff->consultantRecords()->count();
 
         $avatarUrl = $staff->profile_image_path ? \Illuminate\Support\Facades\Storage::disk('public')->url($staff->profile_image_path) : $staff->avatar_url;
         $thumbUrl = $staff->profile_image_thumbnail_path ? \Illuminate\Support\Facades\Storage::disk('public')->url($staff->profile_image_thumbnail_path) : $avatarUrl;
+
+        $deoMetrics = null;
+        if ($isDeo) {
+            $totalFarmers = ActivityLog::where('user_id', $staff->id)
+                ->where('action', 'create_farmer')
+                ->count();
+
+            $totalFarms = ActivityLog::where('user_id', $staff->id)
+                ->where('action', 'farm.created')
+                ->count();
+
+            $posSalesLogs = ActivityLog::where('user_id', $staff->id)
+                ->where('action', 'order.pos_sale')
+                ->get();
+
+            $posCount = $posSalesLogs->count();
+            $totalRevenue = 0;
+            foreach ($posSalesLogs as $log) {
+                $totalRevenue += (float) ($log->changes['total'] ?? 0);
+            }
+
+            // Recent activity feed logged by this DEO
+            $recentActivity = ActivityLog::where('user_id', $staff->id)
+                ->latest('id')
+                ->limit(25)
+                ->get()
+                ->map(function (ActivityLog $log) {
+                    return [
+                        'id' => $log->id,
+                        'action' => $log->action,
+                        'subject_type' => class_basename($log->subject_type ?? ''),
+                        'subject_id' => $log->subject_id,
+                        'changes' => $log->changes,
+                        'created_at' => $log->created_at?->toISOString(),
+                    ];
+                });
+
+            // Recent farmers registered by this DEO
+            $recentFarmerIds = ActivityLog::where('user_id', $staff->id)
+                ->where('action', 'create_farmer')
+                ->latest('id')
+                ->limit(20)
+                ->pluck('subject_id');
+
+            $recentFarmers = User::whereIn('id', $recentFarmerIds)
+                ->withCount('farms')
+                ->get()
+                ->map(function (User $f) {
+                    return [
+                        'id' => $f->id,
+                        'name' => $f->name,
+                        'phone' => $f->phone,
+                        'district' => $f->district,
+                        'gender' => $f->gender,
+                        'farms_count' => $f->farms_count,
+                        'avatar_url' => $f->profile_image_path ? \Illuminate\Support\Facades\Storage::disk('public')->url($f->profile_image_path) : $f->avatar_url,
+                        'created_at' => $f->created_at?->toISOString(),
+                    ];
+                });
+
+            $deoMetrics = [
+                'farmers_registered' => $totalFarmers,
+                'farms_registered' => $totalFarms,
+                'pos_sales_count' => $posCount,
+                'pos_sales_revenue' => round($totalRevenue, 2),
+                'recent_farmers' => $recentFarmers,
+                'recent_activity' => $recentActivity,
+            ];
+        }
 
         return $this->successResponse([
             'id' => $staff->id,
@@ -120,6 +190,7 @@ class StaffController extends ApiController
             'total_visits' => $vetCount + $consultantCount,
             'vet_visits_count' => $vetCount,
             'consultant_visits_count' => $consultantCount,
+            'deo_metrics' => $deoMetrics,
             'last_login_at' => $staff->last_login_at?->toISOString(),
             'created_at' => $staff->created_at?->toISOString(),
         ], 'Staff details retrieved successfully');
