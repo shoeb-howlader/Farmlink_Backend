@@ -254,6 +254,196 @@ vendor/bin/pint --test
 
 ---
 
+## 📡 WebRTC Coturn TURN/STUN Server (Coolify & Self-Hosted)
+
+### ❓ Why a TURN Server is Essential
+In rural Bangladesh and developing agricultural corridors, mobile operators (Grameenphone, Banglalink, Robi, Teletalk) utilize **Carrier-Grade NAT (CGNAT)** and symmetric firewall topologies. This prevents direct peer-to-peer WebRTC connections between farmers on mobile networks and remote veterinary doctors or aquaculture consultants.
+
+**Coturn** acts as a standardized STUN/TURN media relay (RFC 5766 / RFC 5389 / RFC 8489) that guarantees **100% video and audio call connection success** across restrictive firewalls and BDIX networks.
+
+---
+
+### 🐳 Deploying Coturn in Coolify
+
+You can deploy Coturn in **Coolify** either as a Docker Compose service or a standalone Docker container.
+
+#### 1. Docker Compose Configuration (`docker-compose.yml`)
+
+In your Coolify Dashboard:
+1. Navigate to your Project / Environment.
+2. Click **+ New Resource** → **Docker Compose**.
+3. Paste the following configuration:
+
+```yaml
+version: '3.8'
+
+services:
+  coturn:
+    image: coturn/coturn:latest
+    container_name: farmlink-coturn
+    restart: unless-stopped
+    # 'network_mode: host' is essential on Linux for UDP relay performance without NAT degradation
+    network_mode: host
+    volumes:
+      - ./turnserver.conf:/etc/turnserver.conf:ro
+    environment:
+      - DETECT_EXTERNAL_IP=yes
+    command:
+      - -c
+      - /etc/turnserver.conf
+```
+
+> **Note**: If your Coolify host does not allow `network_mode: host`, define explicit port bindings:
+> ```yaml
+> ports:
+>   - "3478:3478/tcp"
+>   - "3478:3478/udp"
+>   - "5349:5349/tcp"
+>   - "5349:5349/udp"
+>   - "49152-49200:49152-49200/udp"
+> ```
+
+#### 2. Coturn Configuration (`turnserver.conf`)
+
+Mount the following configuration in your Coolify service volume (or use [`docker/coturn/turnserver.conf`](file:///c:/laragon/www/Farmlink/Farmlink_Backend/docker/coturn/turnserver.conf)):
+
+```ini
+# Listening endpoints
+listening-port=3478
+tls-listening-port=5349
+
+# Public IP of your Coolify VPS / BDIX server
+external-ip=YOUR_SERVER_PUBLIC_IP
+
+# WebRTC Realm & Ephemeral REST API Authentication
+realm=farmlinkcare.com
+fingerprint
+use-auth-secret
+static-auth-secret=farmlink_bdix_turn_secret_2026_x89q4w
+stale-nonce=600
+
+# UDP Relay Port Range
+min-port=49152
+max-port=65535
+
+# Security hardening
+no-cli
+no-multicast-peers
+no-tlsv1
+no-tlsv1_1
+no-rfc5780
+no-stun-backward-compatibility
+response-origin-only-with-rfc5780
+user-quota=10
+total-quota=1000
+
+# Logging
+syslog
+verbose
+```
+
+#### 3. Firewall Rules (UFW / Security Groups)
+
+Ensure these ports are allowed on your server:
+
+```bash
+# STUN & TURN Default Ports
+sudo ufw allow 3478/tcp
+sudo ufw allow 3478/udp
+
+# Secure TLS/DTLS TURNS Ports
+sudo ufw allow 5349/tcp
+sudo ufw allow 5349/udp
+
+# Media Relay UDP Ports
+sudo ufw allow 49152:65535/udp
+sudo ufw reload
+```
+
+---
+
+### ⚙️ Connecting Laravel Backend to Coturn
+
+Add the Coturn connection parameters to your `.env` file:
+
+```env
+# ------------------------------------------------------------------------------
+# 12. WEBRTC AUDIO & VIDEO CALLING (Coturn TURN/STUN - Coolify / BDIX)
+# ------------------------------------------------------------------------------
+COTURN_HOST=turn.farmlinkcare.com    # Domain or Public IP of your Coturn instance
+COTURN_PORT=3478                    # Default UDP/TCP port
+COTURN_TLS_PORT=5349                # Secure TLS port
+COTURN_REALM=farmlinkcare.com       # Matches 'realm' in turnserver.conf
+COTURN_SECRET=farmlink_bdix_turn_secret_2026_x89q4w # Matches 'static-auth-secret'
+COTURN_TTL=86400                    # Credential lifetime (seconds)
+```
+
+---
+
+### 🔐 How Ephemeral Credentials Work
+
+The backend implements standard **WebRTC REST API Ephemeral HMAC Authentication**:
+
+1. A client initiates a telemedicine call and queries `GET /api/v1/chat/turn-credentials`.
+2. Laravel constructs a time-limited username: `{$timestamp}:{$user_id}`.
+3. Laravel generates an HMAC-SHA1 signature: `base64(hash_hmac('sha1', $username, $secret, true))`.
+4. The client receives the `iceServers` array with valid STUN, TURN (UDP/TCP), and TURNS (TLS) URLs along with the temporary username and password.
+5. Coturn validates the HMAC signature using the same `static-auth-secret` without requiring a persistent database connection.
+
+---
+
+### 🧪 Verifying Your TURN Server
+
+#### 1. Test Endpoint via API:
+```bash
+curl -X GET "https://api.farmlinkcare.com/api/v1/chat/turn-credentials" \
+     -H "Authorization: Bearer YOUR_SANCTUM_TOKEN" \
+     -H "Accept: application/json"
+```
+
+Expected JSON response:
+```json
+{
+  "success": true,
+  "data": {
+    "iceServers": [
+      {
+        "urls": [
+          "stun:turn.farmlinkcare.com:3478",
+          "stun:stun.l.google.com:19302"
+        ]
+      },
+      {
+        "urls": [
+          "turn:turn.farmlinkcare.com:3478?transport=udp",
+          "turn:turn.farmlinkcare.com:3478?transport=tcp",
+          "turns:turn.farmlinkcare.com:5349?transport=tcp"
+        ],
+        "username": "1792121600:42",
+        "credential": "generated-hmac-sha1-base64-token"
+      }
+    ],
+    "ttl": 86400,
+    "host": "turn.farmlinkcare.com",
+    "port": 3478,
+    "tls_port": 5349
+  }
+}
+```
+
+#### 2. Test Media Relay via WebRTC Trickle ICE:
+1. Open the [WebRTC Trickle ICE Tool](https://webrtc.github.io/samples/src/content/peerconnection/trickle-ice/).
+2. Remove standard Google STUN servers.
+3. Add your TURN Server:
+   - **TURN URI**: `turn:YOUR_SERVER_IP:3478?transport=udp`
+   - **TURN username**: Value from API response
+   - **TURN password**: Value from API response
+4. Click **Gather candidates**.
+5. When candidate type `relay` appears with your server's public IP and priority status, your TURN server is 100% operational!
+
+---
+
 ## 📄 License
 
 The FarmLink Backend is open-source software licensed under the [MIT License](LICENSE).
+

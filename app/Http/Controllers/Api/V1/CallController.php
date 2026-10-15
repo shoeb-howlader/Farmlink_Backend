@@ -22,13 +22,23 @@ class CallController extends ApiController
         $user = $request->user();
         $secret = config('webrtc.coturn.secret', 'farmlink_bdix_turn_secret_2026_x89q4w');
         $host = config('webrtc.coturn.host', '165.99.219.252');
-        $port = config('webrtc.coturn.port', 3478);
-        $ttl = config('webrtc.coturn.ttl', 86400);
+        $port = (int) config('webrtc.coturn.port', 3478);
+        $tlsPort = (int) config('webrtc.coturn.tls_port', 5349);
+        $ttl = (int) config('webrtc.coturn.ttl', 86400);
 
         // Standard WebRTC REST API ephemeral HMAC authentication
         $timestamp = time() + $ttl;
         $username = "{$timestamp}:{$user->id}";
         $password = base64_encode(hash_hmac('sha1', $username, $secret, true));
+
+        $turnUrls = [
+            "turn:{$host}:{$port}?transport=udp",
+            "turn:{$host}:{$port}?transport=tcp",
+        ];
+
+        if ($tlsPort > 0) {
+            $turnUrls[] = "turns:{$host}:{$tlsPort}?transport=tcp";
+        }
 
         return $this->successResponse([
             'iceServers' => [
@@ -39,16 +49,15 @@ class CallController extends ApiController
                     ],
                 ],
                 [
-                    'urls' => [
-                        "turn:{$host}:{$port}?transport=udp",
-                        "turn:{$host}:{$port}?transport=tcp",
-                    ],
+                    'urls' => $turnUrls,
                     'username' => $username,
                     'credential' => $password,
                 ],
             ],
             'ttl' => $ttl,
             'host' => $host,
+            'port' => $port,
+            'tls_port' => $tlsPort,
         ], 'TURN credentials generated successfully');
     }
 

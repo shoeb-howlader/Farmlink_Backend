@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  coturn:
+    image: coturn/coturn:latest
+    container_name: farmlink-coturn
+    restart: unless-stopped
+    # 'network_mode: host' is the recommended and highest-performance configuration for TURN servers on Linux
+    network_mode: host
+    volumes:
+      - ./turnserver.conf:/etc/turnserver.conf:ro
+    environment:
+      - DETECT_EXTERNAL_IP=yes
+    command:
+      - -c
+      - /etc/turnserver.conf
