@@ -75,8 +75,8 @@ class SettingController extends ApiController
             'settings.default_locale_deo' => ['nullable', 'string', 'in:bn,en'],
             'settings.default_locale_vet' => ['nullable', 'string', 'in:bn,en'],
             'settings.default_locale_consultant' => ['nullable', 'string', 'in:bn,en'],
-            'settings.brand_primary_color' => ['nullable', 'string', 'in:emerald,teal,cyan,blue'],
-            'settings.brand_font_preset' => ['nullable', 'string', 'in:hind_siliguri,noto_sans_bengali'],
+            'settings.brand_primary_color' => ['nullable', 'string', 'in:emerald,teal,cyan,blue,indigo,violet,amber,rose,forest,sky,bronze,slate'],
+            'settings.brand_font_preset' => ['nullable', 'string', 'in:hind_siliguri,noto_sans_bengali,anek_bangla,tiro_bangla,baloo_da_2,mina,noto_serif_bengali'],
             'settings.default_appearance_mode' => ['nullable', 'string', 'in:system,light,dark'],
         ]);
 
@@ -192,6 +192,6 @@ class SettingController extends ApiController
                 'vet' => Setting::get('default_locale_vet', 'bn'),
                 'consultant' => Setting::get('default_locale_consultant', 'bn'),
             ],
-        ])->header('Cache-Control', 'public, max-age=300, stale-while-revalidate=600');
+        ])->header('Cache-Control', 'no-cache, private, must-revalidate');
     }
 }
