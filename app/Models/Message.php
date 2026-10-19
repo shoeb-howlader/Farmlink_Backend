@@ -26,6 +26,7 @@ class Message extends Model
     protected $appends = [
         'attachment_url',
         'is_pdf',
+        'is_audio',
     ];
 
     public function conversation(): BelongsTo
@@ -72,5 +73,15 @@ class Message extends Model
         }
 
         return strtolower(pathinfo($this->attachment_path, PATHINFO_EXTENSION)) === 'pdf';
+    }
+
+    public function getIsAudioAttribute(): bool
+    {
+        if (! $this->attachment_path) {
+            return false;
+        }
+
+        $ext = strtolower(pathinfo($this->attachment_path, PATHINFO_EXTENSION));
+        return in_array($ext, ['webm', 'mp3', 'ogg', 'wav', 'm4a', 'aac', 'opus', 'mp4']);
     }
 }
