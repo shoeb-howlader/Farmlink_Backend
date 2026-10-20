@@ -7,11 +7,12 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Laravel\Scout\Searchable;
 
 class Product extends Model
 {
     /** @use HasFactory<ProductFactory> */
-    use HasFactory;
+    use HasFactory, Searchable;
 
     /**
      * The attributes that are mass assignable.
@@ -332,5 +333,46 @@ class Product extends Model
     public function prescriptionItems(): HasMany
     {
         return $this->hasMany(PrescriptionItem::class);
+    }
+
+    /**
+     * Modify the collection of models being made searchable during batch indexing.
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder  $query
+     * @return \Illuminate\Database\Eloquent\Builder
+     */
+    protected function makeAllSearchableUsing($query)
+    {
+        return $query->with('variants');
+    }
+
+    /**
+     * Get the indexable data array for the model.
+     *
+     * @return array<string, mixed>
+     */
+    public function toSearchableArray(): array
+    {
+        $hasStock = ($this->stock > 0) || ($this->relationLoaded('variants')
+            ? $this->variants->contains(fn ($v) => $v->stock > 0)
+            : $this->variants()->where('stock', '>', 0)->exists());
+
+        return [
+            'id' => (int) $this->id,
+            'name' => (string) $this->name,
+            'name_bn' => (string) ($this->name_bn ?? ''),
+            'category' => (string) $this->category,
+            'category_bn' => (string) ($this->category_bn ?? ''),
+            'short_description' => (string) ($this->short_description ?? ''),
+            'short_description_bn' => (string) ($this->short_description_bn ?? ''),
+            'description' => strip_tags((string) ($this->description ?? '')),
+            'description_bn' => strip_tags((string) ($this->description_bn ?? '')),
+            'price' => (float) $this->price,
+            'stock' => (int) $this->stock,
+            'has_stock' => (bool) $hasStock,
+            'is_active' => (bool) $this->is_active,
+            'is_featured' => (bool) $this->is_featured,
+            'created_at' => $this->created_at?->timestamp ?? 0,
+        ];
     }
 }

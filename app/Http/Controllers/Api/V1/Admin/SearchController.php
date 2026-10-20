@@ -102,20 +102,32 @@ class SearchController extends ApiController
             });
 
         // 4. Products (up to 5)
-        $products = Product::where(function ($q) use ($lowerQuery) {
-                $q->whereRaw('LOWER(name) LIKE ?', ["%{$lowerQuery}%"])
-                    ->orWhereRaw('LOWER(category) LIKE ?', ["%{$lowerQuery}%"]);
-            })
-            ->limit(5)
-            ->get()
-            ->map(function ($product) {
-                return [
-                    'id' => $product->id,
-                    'title' => $product->name,
-                    'subtitle' => "{$product->category} • ৳" . number_format((float) $product->price, 2) . " • Stock: {$product->stock}",
-                    'url' => '/admin/products',
-                ];
-            });
+        $productModels = null;
+        if (config('scout.driver') === 'meilisearch') {
+            try {
+                $productModels = Product::search($query)->take(5)->get();
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('Meilisearch admin search failed: '.$e->getMessage());
+            }
+        }
+
+        if ($productModels === null) {
+            $productModels = Product::where(function ($q) use ($lowerQuery) {
+                    $q->whereRaw('LOWER(name) LIKE ?', ["%{$lowerQuery}%"])
+                        ->orWhereRaw('LOWER(category) LIKE ?', ["%{$lowerQuery}%"]);
+                })
+                ->limit(5)
+                ->get();
+        }
+
+        $products = $productModels->map(function ($product) {
+            return [
+                'id' => $product->id,
+                'title' => $product->name,
+                'subtitle' => "{$product->category} • ৳" . number_format((float) $product->price, 2) . " • Stock: {$product->stock}",
+                'url' => '/admin/products',
+            ];
+        });
 
         return $this->successResponse([
             'farmers' => $farmers,

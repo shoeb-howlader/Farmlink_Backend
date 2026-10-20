@@ -69,6 +69,7 @@ class ProductController extends ApiController
             ->withAvg('reviews', 'rating')
             ->withCount('reviews');
 
+        $resolvedCategory = null;
         if ($request->filled('category')) {
             $catInput = strtolower(trim((string) $request->query('category')));
             $categoryMap = [
@@ -80,14 +81,61 @@ class ProductController extends ApiController
             ];
 
             if (isset($categoryMap[$catInput])) {
-                $query->where('category', $categoryMap[$catInput]);
+                $resolvedCategory = $categoryMap[$catInput];
+                $query->where('category', $resolvedCategory);
             } else {
                 $query->whereRaw('LOWER(category) = ?', [$catInput]);
             }
         }
 
         if ($request->filled('search')) {
-            $search = $request->query('search');
+            $search = trim((string) $request->query('search'));
+
+            // When Meilisearch driver is active, leverage Scout for typo-tolerant fast search
+            if (config('scout.driver') === 'meilisearch') {
+                try {
+                    $scoutBuilder = Product::search($search)
+                        ->where('is_active', true);
+
+                    if ($resolvedCategory !== null) {
+                        $scoutBuilder->where('category', $resolvedCategory);
+                    }
+
+                    if ($request->boolean('in_stock')) {
+                        $scoutBuilder->where('has_stock', true);
+                    }
+
+                    $sort = $request->query('sort');
+                    if ($sort === 'price_asc') {
+                        $scoutBuilder->orderBy('price', 'asc');
+                    } elseif ($sort === 'price_desc') {
+                        $scoutBuilder->orderBy('price', 'desc');
+                    } elseif ($sort === 'name_asc') {
+                        $scoutBuilder->orderBy('name', 'asc');
+                    }
+
+                    $limit = max(1, min((int) ($request->query('per_page') ?? 24), 50));
+
+                    $paginated = $scoutBuilder
+                        ->query(fn ($q) => $q->with(['variants', 'images'])->withAvg('reviews', 'rating')->withCount('reviews'))
+                        ->paginate($limit);
+
+                    return response()->json([
+                        'success' => true,
+                        'message' => 'Products retrieved successfully',
+                        'data' => ProductResource::collection($paginated->items()),
+                        'meta' => [
+                            'current_page' => $paginated->currentPage(),
+                            'last_page' => $paginated->lastPage(),
+                            'per_page' => $paginated->perPage(),
+                            'total' => $paginated->total(),
+                        ],
+                    ]);
+                } catch (\Throwable $e) {
+                    \Illuminate\Support\Facades\Log::warning('Meilisearch query failed, falling back to database LIKE: '.$e->getMessage());
+                }
+            }
+
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'like', "%{$search}%")
                     ->orWhere('description', 'like', "%{$search}%")
