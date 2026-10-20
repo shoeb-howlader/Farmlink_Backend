@@ -29,6 +29,16 @@ COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 # Set working directory
 WORKDIR /var/www/html
 
+# Accept COMPOSER_AUTH build argument from Coolify
+ARG COMPOSER_AUTH
+ENV COMPOSER_AUTH=$COMPOSER_AUTH
+
+# Copy composer dependencies first for Docker layer caching
+COPY composer.json composer.lock ./
+
+# Install Composer dependencies (cached unless composer files change)
+RUN composer install --no-dev --no-scripts --no-autoloader --no-progress
+
 # Copy application files
 COPY . .
 
@@ -40,8 +50,8 @@ COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 # Remove Windows CRLF line endings from entrypoint script and make executable
 RUN sed -i 's/\r$//' /usr/local/bin/entrypoint.sh && chmod +x /usr/local/bin/entrypoint.sh
 
-# Install PHP dependencies for production
-RUN composer install --no-dev --optimize-autoloader --no-interaction --no-progress
+# Optimize classmap and run Laravel package discovery
+RUN composer dump-autoload --optimize --no-dev
 
 # Set directory permissions
 RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache \
