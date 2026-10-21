@@ -7,11 +7,12 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Laravel\Scout\Searchable;
 
 class Farm extends Model
 {
     /** @use HasFactory<FarmFactory> */
-    use HasFactory;
+    use HasFactory, Searchable;
 
     /**
      * The attributes that are mass assignable.
@@ -233,6 +234,40 @@ class Farm extends Model
     public function telemetries(): HasMany
     {
         return $this->hasMany(PondTelemetry::class);
+    }
+
+    /**
+     * Modify the collection of models being made searchable during batch indexing.
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder  $query
+     * @return \Illuminate\Database\Eloquent\Builder
+     */
+    protected function makeAllSearchableUsing($query)
+    {
+        return $query->with('farmer');
+    }
+
+    /**
+     * Get the indexable data array for the model.
+     *
+     * @return array<string, mixed>
+     */
+    public function toSearchableArray(): array
+    {
+        return [
+            'id' => (int) $this->id,
+            'farm_name' => (string) $this->farm_name,
+            'farm_type' => (string) ($this->farm_type ?? ''),
+            'district' => (string) ($this->district ?? ''),
+            'upazila' => (string) ($this->upazila ?? ''),
+            'union' => (string) ($this->union ?? ''),
+            'village' => (string) ($this->village ?? ''),
+            'farmer_name' => (string) ($this->farmer?->name ?? ''),
+            'farmer_phone' => (string) ($this->farmer?->phone ?? ''),
+            'user_id' => (int) $this->user_id,
+            'total_area' => (float) $this->total_area,
+            'created_at' => $this->created_at?->timestamp ?? 0,
+        ];
     }
 }
 

@@ -86,13 +86,31 @@ class FarmerController extends ApiController
         // Search across name, phone, email, or district
         if ($request->filled('search')) {
             $search = trim($request->query('search'));
-            $lowerSearch = mb_strtolower($search);
-            $query->where(function ($q) use ($search, $lowerSearch) {
-                $q->whereRaw('LOWER(name) LIKE ?', ["%{$lowerSearch}%"])
-                    ->orWhere('phone', 'like', "%{$search}%")
-                    ->orWhereRaw('LOWER(email) LIKE ?', ["%{$lowerSearch}%"])
-                    ->orWhereRaw('LOWER(district) LIKE ?', ["%{$lowerSearch}%"]);
-            });
+            $usedMeili = false;
+
+            if (config('scout.driver') === 'meilisearch') {
+                try {
+                    $matchedIds = User::search($search)
+                        ->where('is_farmer', true)
+                        ->take(200)
+                        ->keys();
+
+                    $query->whereIn('id', $matchedIds);
+                    $usedMeili = true;
+                } catch (\Throwable $e) {
+                    \Illuminate\Support\Facades\Log::warning('Meilisearch farmer index search failed: '.$e->getMessage());
+                }
+            }
+
+            if (! $usedMeili) {
+                $lowerSearch = mb_strtolower($search);
+                $query->where(function ($q) use ($search, $lowerSearch) {
+                    $q->whereRaw('LOWER(name) LIKE ?', ["%{$lowerSearch}%"])
+                        ->orWhere('phone', 'like', "%{$search}%")
+                        ->orWhereRaw('LOWER(email) LIKE ?', ["%{$lowerSearch}%"])
+                        ->orWhereRaw('LOWER(district) LIKE ?', ["%{$lowerSearch}%"]);
+                });
+            }
         }
 
         $sortBy = $request->query('sort_by', 'created_at');

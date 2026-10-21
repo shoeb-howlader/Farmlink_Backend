@@ -7,11 +7,12 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Laravel\Scout\Searchable;
 
 class Order extends Model
 {
     /** @use HasFactory<OrderFactory> */
-    use HasFactory;
+    use HasFactory, Searchable;
 
     /**
      * The attributes that are mass assignable.
@@ -288,6 +289,40 @@ class Order extends Model
     public function getBankTranIdAttribute(): ?string
     {
         return $this->gateway_payment_details['bank_tran_id'] ?? $this->payment?->bank_tran_id ?? null;
+    }
+
+    /**
+     * Modify the collection of models being made searchable during batch indexing.
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder  $query
+     * @return \Illuminate\Database\Eloquent\Builder
+     */
+    protected function makeAllSearchableUsing($query)
+    {
+        return $query->with('user');
+    }
+
+    /**
+     * Get the indexable data array for the model.
+     *
+     * @return array<string, mixed>
+     */
+    public function toSearchableArray(): array
+    {
+        return [
+            'id' => (int) $this->id,
+            'order_code' => 'ORD-' . $this->id,
+            'invoice_number' => (string) ($this->invoice_number ?? ''),
+            'recipient_name' => (string) ($this->recipient_name ?? ''),
+            'recipient_phone' => (string) ($this->recipient_phone ?? ''),
+            'farmer_name' => (string) ($this->user?->name ?? ''),
+            'farmer_phone' => (string) ($this->user?->phone ?? ''),
+            'district' => (string) ($this->district ?? ''),
+            'status' => (string) $this->status,
+            'total' => (float) $this->total,
+            'user_id' => (int) $this->user_id,
+            'created_at' => $this->created_at?->timestamp ?? 0,
+        ];
     }
 }
 

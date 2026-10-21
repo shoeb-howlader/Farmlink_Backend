@@ -67,13 +67,27 @@ class OrderController extends ApiController
         // Search across ID, farmer name, or phone
         if ($request->filled('search')) {
             $search = trim($request->query('search'));
-            $query->where(function ($q) use ($search) {
-                $q->where('id', $search)
-                    ->orWhereHas('user', function ($uq) use ($search) {
-                        $uq->where('name', 'like', "%{$search}%")
-                            ->orWhere('phone', 'like', "%{$search}%");
-                    });
-            });
+            $usedMeili = false;
+
+            if (config('scout.driver') === 'meilisearch') {
+                try {
+                    $matchedIds = Order::search($search)->take(200)->keys();
+                    $query->whereIn('id', $matchedIds);
+                    $usedMeili = true;
+                } catch (\Throwable $e) {
+                    \Illuminate\Support\Facades\Log::warning('Meilisearch order search failed: '.$e->getMessage());
+                }
+            }
+
+            if (! $usedMeili) {
+                $query->where(function ($q) use ($search) {
+                    $q->where('id', $search)
+                        ->orWhereHas('user', function ($uq) use ($search) {
+                            $uq->where('name', 'like', "%{$search}%")
+                                ->orWhere('phone', 'like', "%{$search}%");
+                        });
+                });
+            }
         }
 
         $perPage = max(1, min((int) $request->query('per_page', 15), 100));

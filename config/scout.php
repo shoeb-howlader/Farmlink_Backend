@@ -164,6 +164,131 @@ return [
                     'description',
                     'description_bn',
                 ],
+                'rankingRules' => [
+                    'words',
+                    'typo',
+                    'proximity',
+                    'attribute',
+                    'sort',
+                    'has_stock:desc',
+                    'is_featured:desc',
+                    'exactness',
+                ],
+                'synonyms' => [
+                    'shrimp' => ['chingri', 'বাগদা', 'গলদা', 'চিংড়ি', 'prawn', 'shrimps'],
+                    'chingri' => ['shrimp', 'বাগদা', 'গলদা', 'চিংড়ি', 'prawn'],
+                    'feed' => ['খাবার', 'ফিড', 'food', 'ration', 'pellet'],
+                    'khabar' => ['feed', 'খাবার', 'ফিড'],
+                    'medicine' => ['ঔষধ', 'ওষুধ', 'treatment', 'drug', 'antibiotic'],
+                    'oxygen' => ['অক্সিজেন', 'aerator', 'o2', 'air', 'dissolved oxygen', 'oxymore'],
+                    'probiotic' => ['বায়োফ্লক', 'ব্যাকটেরিয়া', 'probiotics', 'biofloc', 'water care'],
+                    'pond' => ['ঘের', 'পুকুর', 'gher', 'dighi'],
+                    'mineral' => ['মিনারেল', 'লবণ', 'minerals', 'salts'],
+                    'fertilizer' => ['সার', 'fertilizers', 'urea', 'tsp'],
+                ],
+                'typoTolerance' => [
+                    'enabled' => true,
+                    'minWordSizeForTypos' => [
+                        'oneTypo' => 4,
+                        'twoTypos' => 8,
+                    ],
+                ],
+            ],
+
+            \App\Models\User::class => [
+                'filterableAttributes' => [
+                    'id',
+                    'district',
+                    'roles',
+                    'is_farmer',
+                    'is_active',
+                    'is_blacklisted',
+                    'cod_blocked',
+                    'consultations_blocked',
+                ],
+                'sortableAttributes' => [
+                    'id',
+                    'name',
+                    'created_at',
+                ],
+                'searchableAttributes' => [
+                    'name',
+                    'phone',
+                    'email',
+                    'district',
+                ],
+                'typoTolerance' => [
+                    'enabled' => true,
+                    'disableOnAttributes' => [
+                        'phone',
+                        'id',
+                    ],
+                ],
+            ],
+
+            \App\Models\Order::class => [
+                'filterableAttributes' => [
+                    'id',
+                    'user_id',
+                    'status',
+                    'district',
+                    'created_at',
+                ],
+                'sortableAttributes' => [
+                    'id',
+                    'total',
+                    'created_at',
+                ],
+                'searchableAttributes' => [
+                    'order_code',
+                    'invoice_number',
+                    'recipient_name',
+                    'recipient_phone',
+                    'farmer_name',
+                    'farmer_phone',
+                    'district',
+                ],
+                'typoTolerance' => [
+                    'enabled' => true,
+                    'disableOnAttributes' => [
+                        'id',
+                        'order_code',
+                        'invoice_number',
+                        'recipient_phone',
+                        'farmer_phone',
+                    ],
+                ],
+            ],
+
+            \App\Models\Farm::class => [
+                'filterableAttributes' => [
+                    'id',
+                    'user_id',
+                    'district',
+                    'upazila',
+                    'farm_type',
+                ],
+                'sortableAttributes' => [
+                    'id',
+                    'total_area',
+                    'created_at',
+                ],
+                'searchableAttributes' => [
+                    'farm_name',
+                    'district',
+                    'upazila',
+                    'union',
+                    'village',
+                    'farmer_name',
+                    'farmer_phone',
+                ],
+                'typoTolerance' => [
+                    'enabled' => true,
+                    'disableOnAttributes' => [
+                        'id',
+                        'farmer_phone',
+                    ],
+                ],
             ],
         ],
         'model-settings' => [

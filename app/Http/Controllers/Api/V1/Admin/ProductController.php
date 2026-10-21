@@ -42,12 +42,26 @@ class ProductController extends ApiController
 
         if ($request->filled('search')) {
             $search = trim($request->query('search'));
-            $query->where(function ($q) use ($search) {
-                $q->where('name', 'like', "%{$search}%")
-                    ->orWhere('description', 'like', "%{$search}%")
-                    ->orWhere('short_description', 'like', "%{$search}%")
-                    ->orWhere('category', 'like', "%{$search}%");
-            });
+            $usedMeili = false;
+
+            if (config('scout.driver') === 'meilisearch') {
+                try {
+                    $matchedIds = Product::search($search)->take(200)->keys();
+                    $query->whereIn('id', $matchedIds);
+                    $usedMeili = true;
+                } catch (\Throwable $e) {
+                    \Illuminate\Support\Facades\Log::warning('Meilisearch admin product search failed: '.$e->getMessage());
+                }
+            }
+
+            if (! $usedMeili) {
+                $query->where(function ($q) use ($search) {
+                    $q->where('name', 'like', "%{$search}%")
+                        ->orWhere('description', 'like', "%{$search}%")
+                        ->orWhere('short_description', 'like', "%{$search}%")
+                        ->orWhere('category', 'like', "%{$search}%");
+                });
+            }
         }
 
         // Stock status filtering

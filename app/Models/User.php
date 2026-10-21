@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
+use Laravel\Scout\Searchable;
 use Spatie\Permission\Traits\HasRoles;
 
 #[Fillable(['name', 'email', 'phone', 'phone_verified_at', 'phone_otp', 'phone_otp_expires_at', 'phone_otp_sent_at', 'district', 'gender', 'profile_image_path', 'profile_image_thumbnail_path', 'password', 'is_active', 'status', 'rejection_reason', 'approved_at', 'approved_by', 'rejected_at', 'rejected_by', 'avatar_url', 'last_login_at', 'delivered_orders_count', 'refused_cod_orders_count', 'cod_blocked', 'consultations_blocked', 'is_blacklisted', 'blacklist_reason'])]
@@ -18,7 +19,7 @@ use Spatie\Permission\Traits\HasRoles;
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
-    use HasApiTokens, HasFactory, HasRoles, Notifiable;
+    use HasApiTokens, HasFactory, HasRoles, Notifiable, Searchable;
 
     /**
      * Get the attributes that should be cast.
@@ -161,5 +162,39 @@ class User extends Authenticatable
     public function assignedServiceRequests(): \Illuminate\Database\Eloquent\Relations\HasMany
     {
         return $this->hasMany(ServiceRequest::class, 'assigned_to');
+    }
+
+    /**
+     * Modify the collection of models being made searchable during batch indexing.
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder  $query
+     * @return \Illuminate\Database\Eloquent\Builder
+     */
+    protected function makeAllSearchableUsing($query)
+    {
+        return $query->with('roles');
+    }
+
+    /**
+     * Get the indexable data array for the model.
+     *
+     * @return array<string, mixed>
+     */
+    public function toSearchableArray(): array
+    {
+        return [
+            'id' => (int) $this->id,
+            'name' => (string) $this->name,
+            'phone' => (string) ($this->phone ?? ''),
+            'email' => (string) ($this->email ?? ''),
+            'district' => (string) ($this->district ?? ''),
+            'roles' => $this->roles->pluck('name')->all(),
+            'is_farmer' => $this->hasRole('farmer'),
+            'is_active' => (bool) $this->is_active,
+            'is_blacklisted' => (bool) $this->is_blacklisted,
+            'cod_blocked' => (bool) $this->cod_blocked,
+            'consultations_blocked' => (bool) $this->consultations_blocked,
+            'created_at' => $this->created_at?->timestamp ?? 0,
+        ];
     }
 }
