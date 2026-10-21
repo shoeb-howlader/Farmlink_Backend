@@ -290,6 +290,38 @@ return [
                     ],
                 ],
             ],
+
+            \App\Models\Message::class => [
+                'filterableAttributes' => [
+                    'id',
+                    'conversation_id',
+                    'sender_id',
+                    'has_attachment',
+                ],
+                'sortableAttributes' => [
+                    'id',
+                    'created_at',
+                ],
+                'searchableAttributes' => [
+                    'body',
+                    'sender_name',
+                ],
+                'rankingRules' => [
+                    'words',
+                    'typo',
+                    'proximity',
+                    'attribute',
+                    'sort',
+                    'exactness',
+                ],
+                'typoTolerance' => [
+                    'enabled' => true,
+                    'minWordSizeForTypos' => [
+                        'oneTypo' => 4,
+                        'twoTypos' => 8,
+                    ],
+                ],
+            ],
         ],
         'model-settings' => [
             // User::class => [

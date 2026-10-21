@@ -818,4 +818,84 @@ class ChatModuleTest extends TestCase
         $this->assertEquals('Message number 1', $olderMessages[0]['body']);
         $this->assertEquals('Message number 10', $olderMessages[9]['body']);
     }
+
+    public function test_can_search_messages_within_conversation(): void
+    {
+        $conv = Conversation::create([
+            'type' => 'support',
+            'status' => 'open',
+            'created_by' => $this->farmer->id,
+        ]);
+
+        $conv->participants()->create(['user_id' => $this->farmer->id]);
+
+        $m1 = $conv->messages()->create([
+            'sender_id' => $this->farmer->id,
+            'body' => 'Need advice on dissolved oxygen meter',
+        ]);
+
+        $m2 = $conv->messages()->create([
+            'sender_id' => $this->farmer->id,
+            'body' => 'How much lime should I add to my pond?',
+        ]);
+
+        $m3 = $conv->messages()->create([
+            'sender_id' => $this->farmer->id,
+            'body' => 'Emergency: oxygen tablets required immediately',
+        ]);
+
+        Sanctum::actingAs($this->farmer);
+
+        $res = $this->getJson("/api/v1/chat/conversations/{$conv->id}/messages?search=oxygen");
+        $res->assertStatus(200)
+            ->assertJsonPath('data.total_matches', 2);
+
+        $bodies = collect($res->json('data.messages'))->pluck('body');
+        $this->assertTrue($bodies->contains('Need advice on dissolved oxygen meter'));
+        $this->assertTrue($bodies->contains('Emergency: oxygen tablets required immediately'));
+        $this->assertFalse($bodies->contains('How much lime should I add to my pond?'));
+    }
+
+    public function test_can_search_messages_globally_across_accessible_conversations(): void
+    {
+        $conv1 = Conversation::create([
+            'type' => 'support',
+            'status' => 'open',
+            'created_by' => $this->farmer->id,
+        ]);
+        $conv1->participants()->create(['user_id' => $this->farmer->id]);
+
+        $conv1->messages()->create([
+            'sender_id' => $this->farmer->id,
+            'body' => 'Checking probiotic feed stock in warehouse',
+        ]);
+
+        $conv2 = Conversation::create([
+            'type' => 'support',
+            'status' => 'open',
+            'created_by' => $this->otherFarmer->id,
+        ]);
+        $conv2->participants()->create(['user_id' => $this->otherFarmer->id]);
+
+        $conv2->messages()->create([
+            'sender_id' => $this->otherFarmer->id,
+            'body' => 'Other farmer secret probiotic formula',
+        ]);
+
+        // Farmer should only find their own conversation messages
+        Sanctum::actingAs($this->farmer);
+
+        $res = $this->getJson('/api/v1/chat/messages/search?q=probiotic');
+        $res->assertStatus(200)
+            ->assertJsonPath('data.total', 1);
+
+        $this->assertEquals('Checking probiotic feed stock in warehouse', $res->json('data.messages.0.body'));
+
+        // Admin should see both
+        Sanctum::actingAs($this->admin);
+
+        $adminRes = $this->getJson('/api/v1/chat/messages/search?q=probiotic');
+        $adminRes->assertStatus(200)
+            ->assertJsonPath('data.total', 2);
+    }
 }

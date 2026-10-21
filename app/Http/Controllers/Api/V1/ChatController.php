@@ -57,14 +57,6 @@ class ChatController extends ApiController
                 // Default view shows open conversations
                 $query->where('status', 'open');
             }
-
-            if ($request->filled('search')) {
-                $search = trim($request->query('search'));
-                $query->whereHas('users', function ($q) use ($search) {
-                    $q->where('name', 'ilike', "%{$search}%")
-                      ->orWhere('phone', 'like', "%{$search}%");
-                });
-            }
         } else {
             // General conversation list
             if ($isAdmin) {
@@ -106,6 +98,41 @@ class ChatController extends ApiController
                     $query->where('status', $request->query('status'));
                 }
             }
+        }
+
+        // Universal conversation search (matches participant name, phone, or message body)
+        if ($request->filled('search')) {
+            $search = trim((string) $request->query('search'));
+            $matchingConvIds = [];
+            if (config('scout.driver')) {
+                try {
+                    $matchingConvIds = Message::search($search)
+                        ->take(100)
+                        ->get()
+                        ->pluck('conversation_id')
+                        ->filter()
+                        ->unique()
+                        ->values()
+                        ->all();
+                } catch (\Throwable $e) {
+                    $matchingConvIds = [];
+                }
+            }
+
+            $query->where(function ($sq) use ($search, $matchingConvIds) {
+                $sq->whereHas('users', function ($uq) use ($search) {
+                    $uq->where('name', 'ilike', "%{$search}%")
+                      ->orWhere('phone', 'like', "%{$search}%");
+                });
+
+                if (! empty($matchingConvIds)) {
+                    $sq->orWhereIn('id', $matchingConvIds);
+                } else {
+                    $sq->orWhereHas('messages', function ($mq) use ($search) {
+                        $mq->where('body', 'ilike', "%{$search}%");
+                    });
+                }
+            });
         }
 
         // Sort by latest message activity, fallback to created_at
@@ -271,12 +298,34 @@ class ChatController extends ApiController
 
         $limit = min(max((int) $request->input('limit', 50), 1), 100);
         $beforeId = $request->input('before_id');
+        $search = trim((string) $request->input('search', ''));
 
         $messagesQuery = $conversation->messages()
             ->with(['sender' => function ($q) {
                 $q->select('id', 'name', 'phone')->with('roles:id,name');
             }])
             ->orderBy('id', 'desc');
+
+        if ($search !== '') {
+            $matchingIds = [];
+            if (config('scout.driver')) {
+                try {
+                    $matchingIds = Message::search($search)
+                        ->where('conversation_id', $id)
+                        ->take($limit)
+                        ->keys()
+                        ->all();
+                } catch (\Throwable $e) {
+                    $matchingIds = [];
+                }
+            }
+
+            if (! empty($matchingIds)) {
+                $messagesQuery->whereIn('id', $matchingIds);
+            } else {
+                $messagesQuery->where('body', 'ilike', "%{$search}%");
+            }
+        }
 
         if ($beforeId) {
             $messagesQuery->where('id', '<', (int) $beforeId);
@@ -292,7 +341,114 @@ class ChatController extends ApiController
             'messages' => $messages->map(fn (Message $m) => $this->formatMessage($m)),
             'has_more' => $hasMore,
             'next_cursor' => $nextCursor,
+            'search_query' => $search ?: null,
+            'total_matches' => $search !== '' ? $messages->count() : null,
         ], 'Messages loaded successfully');
+    }
+
+    /**
+     * Search messages across all accessible conversations (Option B & C).
+     */
+    public function searchMessages(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        $query = trim((string) $request->input('q', $request->input('search', '')));
+
+        if ($query === '') {
+            return $this->successResponse([
+                'messages' => [],
+                'total' => 0,
+            ], 'No query provided');
+        }
+
+        $limit = min(max((int) $request->input('limit', 30), 1), 60);
+
+        // Scope to conversations the user has permission to view
+        $conversationsQuery = Conversation::query();
+
+        if (! $user->hasRole('admin')) {
+            $conversationsQuery->where(function ($q) use ($user) {
+                $q->whereHas('participants', fn ($pq) => $pq->where('user_id', $user->id))
+                  ->orWhere('created_by', $user->id);
+
+                if ($user->hasAnyRole(['veterinary_doctor', 'consultant'])) {
+                    $q->orWhere(function ($sq) use ($user) {
+                        $sq->where('type', 'practitioner')
+                           ->where('context_type', 'service_request')
+                           ->whereIn('context_id', ServiceRequest::where('assigned_to', $user->id)->pluck('id'));
+                    });
+                }
+
+                if ($user->hasRole('data_entry_operator')) {
+                    $q->orWhere('type', 'support');
+                }
+            });
+        }
+
+        $accessibleConvIds = $conversationsQuery->pluck('id');
+
+        if ($accessibleConvIds->isEmpty()) {
+            return $this->successResponse([
+                'messages' => [],
+                'total' => 0,
+            ], 'No accessible conversations');
+        }
+
+        $matchingIds = [];
+        if (config('scout.driver')) {
+            try {
+                $matchingIds = Message::search($query)
+                    ->take($limit * 2)
+                    ->get()
+                    ->whereIn('conversation_id', $accessibleConvIds)
+                    ->pluck('id')
+                    ->all();
+            } catch (\Throwable $e) {
+                $matchingIds = [];
+            }
+        }
+
+        $messagesQuery = Message::query()
+            ->with([
+                'conversation.creator',
+                'conversation.users',
+                'sender:id,name,phone',
+            ])
+            ->whereIn('conversation_id', $accessibleConvIds)
+            ->orderBy('id', 'desc');
+
+        if (! empty($matchingIds)) {
+            $messagesQuery->whereIn('id', $matchingIds);
+        } else {
+            $messagesQuery->where('body', 'ilike', "%{$query}%");
+        }
+
+        $results = $messagesQuery->take($limit)->get();
+
+        return $this->successResponse([
+            'messages' => $results->map(function (Message $m) use ($user) {
+                $conv = $m->conversation;
+                $otherParty = $conv ? $conv->getDisplayParty($user) : null;
+
+                return [
+                    'id' => $m->id,
+                    'conversation_id' => $m->conversation_id,
+                    'conversation_type' => $conv?->type,
+                    'conversation_status' => $conv?->status,
+                    'other_party' => $otherParty,
+                    'body' => $m->body,
+                    'has_attachment' => ! empty($m->attachment_path),
+                    'attachment_url' => $m->attachment_url,
+                    'is_audio' => $m->is_audio,
+                    'is_pdf' => $m->is_pdf,
+                    'sender_id' => $m->sender_id,
+                    'sender_name' => $m->sender?->name ?? 'User',
+                    'created_at' => $m->created_at?->toISOString(),
+                ];
+            }),
+            'total' => $results->count(),
+            'query' => $query,
+        ], 'Chat messages searched successfully');
     }
 
     /**

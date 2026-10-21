@@ -188,6 +188,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // Chat & Messaging (Farmer, Practitioner, Staff)
     Route::get('/chat/conversations', [ChatController::class, 'index'])->name('chat.conversations.index');
     Route::post('/chat/conversations', [ChatController::class, 'store'])->name('chat.conversations.store');
+    Route::get('/chat/messages/search', [ChatController::class, 'searchMessages'])->name('chat.messages.search');
     Route::get('/chat/conversations/{id}', [ChatController::class, 'show'])->name('chat.conversations.show');
     Route::get('/chat/conversations/{id}/messages', [ChatController::class, 'getMessages'])->name('chat.conversations.messages.index');
     Route::post('/chat/conversations/{id}/messages', [ChatController::class, 'sendMessage'])->name('chat.conversations.messages.send');

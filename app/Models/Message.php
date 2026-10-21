@@ -6,10 +6,11 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Facades\Storage;
+use Laravel\Scout\Searchable;
 
 class Message extends Model
 {
-    use HasFactory;
+    use HasFactory, Searchable;
 
     protected $fillable = [
         'conversation_id',
@@ -32,6 +33,24 @@ class Message extends Model
     public function conversation(): BelongsTo
     {
         return $this->belongsTo(Conversation::class);
+    }
+
+    public function toSearchableArray(): array
+    {
+        return [
+            'id' => (int) $this->id,
+            'conversation_id' => (int) $this->conversation_id,
+            'sender_id' => (int) $this->sender_id,
+            'sender_name' => (string) ($this->sender?->name ?? 'User'),
+            'body' => (string) ($this->body ?? ''),
+            'has_attachment' => ! empty($this->attachment_path),
+            'created_at' => (int) ($this->created_at?->timestamp ?? 0),
+        ];
+    }
+
+    public function shouldBeSearchable(): bool
+    {
+        return ! empty(trim((string) $this->body));
     }
 
     public function sender(): BelongsTo
