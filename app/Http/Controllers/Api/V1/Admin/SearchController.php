@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1\Admin;
 
 use App\Http\Controllers\Api\V1\ApiController;
+use App\Models\Conversation;
 use App\Models\Farm;
 use App\Models\Order;
 use App\Models\Product;
@@ -14,7 +15,7 @@ use Illuminate\Support\Facades\Gate;
 class SearchController extends ApiController
 {
     /**
-     * Perform global search across farmers, farms, orders, and products (Admin only).
+     * Perform global search across farmers, farms, orders, products, and support chats (Admin only).
      */
     public function search(Request $request): JsonResponse
     {
@@ -28,6 +29,7 @@ class SearchController extends ApiController
                 'farms' => [],
                 'orders' => [],
                 'products' => [],
+                'chats' => [],
             ], 'Search results');
         }
 
@@ -174,11 +176,52 @@ class SearchController extends ApiController
             ];
         });
 
+        // 5. Support Inquiries & Chat Threads (up to 5)
+        $cleanId = preg_replace('/[^0-9]/', '', $query);
+        $convModels = Conversation::with(['users', 'latestMessage'])
+            ->where(function ($q) use ($query, $lowerQuery, $cleanId) {
+                $q->whereHas('users', function ($uq) use ($query, $lowerQuery) {
+                    $uq->whereRaw('LOWER(name) LIKE ?', ["%{$lowerQuery}%"])
+                       ->orWhere('phone', 'like', "%{$query}%");
+                });
+
+                if (!empty($cleanId) && strlen($cleanId) <= 18) {
+                    $q->orWhere('id', (int) $cleanId)
+                      ->orWhere('context_id', (int) $cleanId);
+                }
+            })
+            ->latest('last_message_at')
+            ->limit(5)
+            ->get();
+
+        $chats = $convModels->map(function ($conv) {
+            $client = $conv->users->first(fn ($u) => $u->hasRole('farmer')) ?? $conv->users->first();
+            $clientName = $client?->name ?? 'Farmer';
+            $context = $conv->getContextLabel();
+            $title = "Chat: {$clientName}" . ($context ? " ({$context})" : '');
+
+            $status = ucfirst($conv->status ?? 'open');
+            $type = ucfirst($conv->type ?? 'support');
+            $latestMsg = $conv->latestMessage?->body;
+            if ($latestMsg && mb_strlen($latestMsg) > 45) {
+                $latestMsg = mb_substr($latestMsg, 0, 42) . '...';
+            }
+            $subtitle = "{$type} • {$status}" . ($latestMsg ? " • \"{$latestMsg}\"" : '');
+
+            return [
+                'id' => $conv->id,
+                'title' => $title,
+                'subtitle' => $subtitle,
+                'url' => "/admin/support-inbox?conversation_id={$conv->id}",
+            ];
+        });
+
         return $this->successResponse([
             'farmers' => $farmers,
             'farms' => $farms,
             'orders' => $orders,
             'products' => $products,
+            'chats' => $chats,
         ], 'Search results');
     }
 }

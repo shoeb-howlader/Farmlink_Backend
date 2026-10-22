@@ -49,21 +49,35 @@ class DashboardController extends ApiController
             // 2. High-Performance Consolidated SQL Aggregations for Sales
             $startOfMonth = $now->copy()->startOfMonth()->toDateTimeString();
             $endOfMonth = $now->copy()->endOfMonth()->toDateTimeString();
+            $startOfLastMonth = $now->copy()->subMonth()->startOfMonth()->toDateTimeString();
+            $endOfLastMonth = $now->copy()->subMonth()->endOfMonth()->toDateTimeString();
 
             $salesAgg = Order::selectRaw("
                 count(*) as total_orders,
                 coalesce(sum(case when status not in ('cancelled', 'rejected', 'returned') then total else 0 end), 0) as total_revenue,
                 count(case when status not in ('cancelled', 'rejected', 'returned') then 1 end) as valid_orders,
                 count(case when created_at >= ? and created_at <= ? then 1 end) as this_month_orders,
-                coalesce(sum(case when status not in ('cancelled', 'rejected', 'returned') and created_at >= ? and created_at <= ? then total else 0 end), 0) as this_month_revenue
-            ", [$startOfMonth, $endOfMonth, $startOfMonth, $endOfMonth])->first();
+                coalesce(sum(case when status not in ('cancelled', 'rejected', 'returned') and created_at >= ? and created_at <= ? then total else 0 end), 0) as this_month_revenue,
+                count(case when created_at >= ? and created_at <= ? then 1 end) as last_month_orders,
+                coalesce(sum(case when status not in ('cancelled', 'rejected', 'returned') and created_at >= ? and created_at <= ? then total else 0 end), 0) as last_month_revenue
+            ", [$startOfMonth, $endOfMonth, $startOfMonth, $endOfMonth, $startOfLastMonth, $endOfLastMonth, $startOfLastMonth, $endOfLastMonth])->first();
 
             $totalOrders = (int) ($salesAgg->total_orders ?? 0);
             $totalRevenue = (float) ($salesAgg->total_revenue ?? 0);
             $thisMonthOrders = (int) ($salesAgg->this_month_orders ?? 0);
             $thisMonthRevenue = (float) ($salesAgg->this_month_revenue ?? 0);
+            $lastMonthOrders = (int) ($salesAgg->last_month_orders ?? 0);
+            $lastMonthRevenue = (float) ($salesAgg->last_month_revenue ?? 0);
             $validAllTimeOrders = (int) ($salesAgg->valid_orders ?? 0);
             $avgOrderValue = $validAllTimeOrders > 0 ? round($totalRevenue / $validAllTimeOrders, 2) : 0;
+
+            $revenueDeltaPercent = $lastMonthRevenue > 0
+                ? round((($thisMonthRevenue - $lastMonthRevenue) / $lastMonthRevenue) * 100, 1)
+                : ($thisMonthRevenue > 0 ? 100.0 : 0.0);
+
+            $ordersDeltaPercent = $lastMonthOrders > 0
+                ? round((($thisMonthOrders - $lastMonthOrders) / $lastMonthOrders) * 100, 1)
+                : ($thisMonthOrders > 0 ? 100.0 : 0.0);
 
             // Filtered range metrics (if range was supplied)
             $rangeRevenue = $totalRevenue;
@@ -219,6 +233,10 @@ class DashboardController extends ApiController
                     'total_orders' => $totalOrders,
                     'this_month_revenue' => $thisMonthRevenue,
                     'this_month_orders' => $thisMonthOrders,
+                    'last_month_revenue' => $lastMonthRevenue,
+                    'last_month_orders' => $lastMonthOrders,
+                    'revenue_delta_percent' => $revenueDeltaPercent,
+                    'orders_delta_percent' => $ordersDeltaPercent,
                     'avg_order_value' => $avgOrderValue,
                     'status_counts' => $statusCounts,
                     'selected_range' => $range,
