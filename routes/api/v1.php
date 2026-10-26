@@ -35,6 +35,7 @@ use App\Http\Controllers\Api\V1\Practitioner\ServiceRequestController as Practit
 use App\Http\Controllers\Api\V1\PrescriptionController;
 use App\Http\Controllers\Api\V1\ProductController;
 use App\Http\Controllers\Api\V1\ServiceRequestController;
+use App\Http\Controllers\Api\V1\SitemapController;
 use App\Http\Controllers\Api\V1\StatusController;
 use App\Http\Controllers\Api\V1\UserController;
 use App\Http\Controllers\Api\V1\VetRecordController;
@@ -76,6 +77,7 @@ Route::post('/lead-inquiries', [LeadInquiryController::class, 'store'])->middlew
 Route::get('/settings/public', [\App\Http\Controllers\Api\V1\Admin\SettingController::class, 'publicSettings'])->name('settings.public');
 Route::get('/taxonomies', [\App\Http\Controllers\Api\V1\TaxonomyController::class, 'index'])->name('taxonomies.index');
 Route::get('/payment-methods', [\App\Http\Controllers\Api\V1\PaymentMethodController::class, 'index'])->name('payment-methods.index');
+Route::get('/sitemap-urls', [SitemapController::class, 'index'])->name('sitemap.urls');
 
 // SSLCommerz Payment Gateway Endpoints
 Route::post('/payments/sslcommerz/ipn', [PaymentController::class, 'handleIpn'])

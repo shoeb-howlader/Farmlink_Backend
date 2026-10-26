@@ -17,3 +17,7 @@ use Illuminate\Support\Facades\Route;
 Route::prefix('v1')
     ->as('v1.')
     ->group(base_path('routes/api/v1.php'));
+
+// Dynamic Sitemap URLs for Nuxt SEO
+Route::get('/sitemap-urls', [App\Http\Controllers\Api\V1\SitemapController::class, 'index'])->name('sitemap.urls');
+
