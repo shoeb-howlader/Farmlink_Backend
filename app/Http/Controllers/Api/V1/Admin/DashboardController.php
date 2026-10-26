@@ -212,7 +212,9 @@ class DashboardController extends ApiController
                         'farm_type' => $row->farm_type ?: 'general',
                         'count' => (int) $row->count,
                     ];
-                });
+                })
+                ->values()
+                ->all();
 
             // 6. Critical Low Stock Items for Drawer
             $criticalLowStock = Product::where('is_active', true)
@@ -225,7 +227,8 @@ class DashboardController extends ApiController
                 ->select('id', 'name', 'name_bn', 'category', 'category_bn', 'stock', 'low_stock_threshold', 'price', 'image_url')
                 ->orderBy('stock', 'asc')
                 ->limit(8)
-                ->get();
+                ->get()
+                ->toArray();
 
             return [
                 'sales' => [

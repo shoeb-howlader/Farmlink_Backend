@@ -20,6 +20,7 @@ use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\CallController;
 use App\Http\Controllers\Api\V1\CannedResponseController;
 use App\Http\Controllers\Api\V1\ChatController;
+use App\Http\Controllers\Api\V1\ContactController;
 use App\Http\Controllers\Api\V1\ConsultantRecordController;
 use App\Http\Controllers\Api\V1\FarmController;
 use App\Http\Controllers\Api\V1\InvoiceController;
@@ -60,6 +61,7 @@ Route::get('/products/{product}', [ProductController::class, 'show'])->name('pro
 Route::get('/products/{product}/reviews', [\App\Http\Controllers\Api\V1\ProductReviewController::class, 'index'])->name('products.reviews.index');
 Route::get('/weather', [\App\Http\Controllers\Api\V1\WeatherController::class, 'getWeather'])->name('weather.get');
 Route::get('/chat/attachments/stream', [ChatController::class, 'streamAttachment'])->name('chat.attachments.stream');
+Route::post('/contact', [ContactController::class, 'send'])->middleware('throttle:5,1')->name('contact');
 
 // Phone OTP verification (public or authenticated)
 Route::post('/auth/otp/verify', [OtpController::class, 'verify'])->name('auth.otp.verify');

@@ -21,3 +21,8 @@ Route::prefix('v1')
 // Dynamic Sitemap URLs for Nuxt SEO
 Route::get('/sitemap-urls', [App\Http\Controllers\Api\V1\SitemapController::class, 'index'])->name('sitemap.urls');
 
+// Public Contact Form (throttle:5,1 rate limiting)
+Route::post('/contact', [\App\Http\Controllers\Api\V1\ContactController::class, 'send'])
+    ->middleware('throttle:5,1')
+    ->name('contact.send');
+
