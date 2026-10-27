@@ -257,7 +257,7 @@ class AuthController extends ApiController
         if ($user->email && $isEmail) {
             $brokerToken = Password::broker()->createToken($user);
             Mail::to($user->email)->queue(new PasswordResetMail($user, $brokerToken, $otp));
-            \Illuminate\Support\Facades\Log::info("[EMAIL DISPATCH] Password reset email queued for {$user->email} with broker token and OTP: {$otp}");
+            \Illuminate\Support\Facades\Log::info("[EMAIL DISPATCH] Password reset email queued for {$user->email}");
         }
 
         $targetToMask = $isEmail && $user->email ? $user->email : ($user->phone ?? $identifier);

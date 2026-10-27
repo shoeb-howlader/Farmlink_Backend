@@ -25,11 +25,22 @@ class StaffController extends ApiController
     ];
 
     /**
+     * Authorize that the current request user is an administrator.
+     */
+    protected function authorizeAdmin(?Request $request = null): void
+    {
+        $user = $request?->user() ?? auth()->user();
+        if (! $user || ! $user->hasRole('admin')) {
+            abort(403, 'Unauthorized. Administrative privileges required.');
+        }
+    }
+
+    /**
      * Display a listing of staff members, filterable by role (Admin only).
      */
     public function index(Request $request): JsonResponse
     {
-        Gate::authorize('viewAdmin', Order::class);
+        $this->authorizeAdmin($request);
 
         $roleFilter = $request->query('role');
         $validRoles = in_array($roleFilter, $this->staffRoles) ? [$roleFilter] : $this->staffRoles;
@@ -96,7 +107,7 @@ class StaffController extends ApiController
      */
     public function show(User $staff): JsonResponse
     {
-        Gate::authorize('viewAdmin', Order::class);
+        $this->authorizeAdmin();
 
         $staff->load('roles');
         $isDeo = $staff->hasRole('data_entry_operator');
@@ -201,7 +212,7 @@ class StaffController extends ApiController
      */
     public function store(Request $request): JsonResponse
     {
-        Gate::authorize('viewAdmin', Order::class);
+        $this->authorizeAdmin($request);
 
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
@@ -255,7 +266,7 @@ class StaffController extends ApiController
      */
     public function update(Request $request, User $staff): JsonResponse
     {
-        Gate::authorize('viewAdmin', Order::class);
+        $this->authorizeAdmin($request);
 
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
@@ -324,7 +335,7 @@ class StaffController extends ApiController
      */
     public function updateAvatar(\App\Http\Requests\Api\V1\UploadImageRequest $request, User $user, \App\Services\ImageUploadService $uploader): JsonResponse
     {
-        Gate::authorize('viewAdmin', Order::class);
+        $this->authorizeAdmin($request);
 
         $file = $request->getImageFile();
         $result = $uploader->storeImageWithThumbnail($file, 'avatars');
@@ -360,7 +371,7 @@ class StaffController extends ApiController
      */
     public function updateStatus(Request $request, User $staff): JsonResponse
     {
-        Gate::authorize('viewAdmin', Order::class);
+        $this->authorizeAdmin($request);
 
         if (auth()->id() === $staff->id) {
             return response()->json([
@@ -393,7 +404,7 @@ class StaffController extends ApiController
      */
     public function destroy(User $staff): JsonResponse
     {
-        Gate::authorize('viewAdmin', Order::class);
+        $this->authorizeAdmin();
 
         if (auth()->id() === $staff->id) {
             return response()->json([

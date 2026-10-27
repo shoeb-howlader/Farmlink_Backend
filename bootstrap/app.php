@@ -17,9 +17,9 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'role' => \Spatie\Permission\Middleware\RoleMiddleware::class,
             'phone.verified' => \App\Http\Middleware\EnsurePhoneIsVerified::class,
+            'query.token' => \App\Http\Middleware\QueryTokenToHeader::class,
         ]);
 
-        $middleware->prependToGroup('api', \App\Http\Middleware\QueryTokenToHeader::class);
         $middleware->trimStrings(except: ['sdp']);
         $middleware->redirectGuestsTo(fn () => null);
     })

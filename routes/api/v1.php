@@ -60,11 +60,10 @@ Route::get('/products', [ProductController::class, 'index'])->name('products.ind
 Route::get('/products/{product}', [ProductController::class, 'show'])->name('products.show');
 Route::get('/products/{product}/reviews', [\App\Http\Controllers\Api\V1\ProductReviewController::class, 'index'])->name('products.reviews.index');
 Route::get('/weather', [\App\Http\Controllers\Api\V1\WeatherController::class, 'getWeather'])->name('weather.get');
-Route::get('/chat/attachments/stream', [ChatController::class, 'streamAttachment'])->name('chat.attachments.stream');
 Route::post('/contact', [ContactController::class, 'send'])->middleware('throttle:5,1')->name('contact');
 
-// Phone OTP verification (public or authenticated)
-Route::post('/auth/otp/verify', [OtpController::class, 'verify'])->name('auth.otp.verify');
+// Phone OTP verification (public or authenticated with brute-force rate limit)
+Route::post('/auth/otp/verify', [OtpController::class, 'verify'])->middleware('throttle:5,1')->name('auth.otp.verify');
 Route::post('/auth/otp/resend', [OtpController::class, 'resend'])->middleware('throttle:10,1')->name('auth.otp.resend');
 
 // Password Reset routes (Phone/Email OTP or Token Link)
@@ -86,7 +85,6 @@ Route::post('/payments/sslcommerz/ipn', [PaymentController::class, 'handleIpn'])
     ->middleware('throttle:60,1')
     ->name('payments.sslcommerz.ipn');
 Route::match(['get', 'post'], '/payments/sslcommerz/return', [PaymentController::class, 'handleReturn'])->name('payments.sslcommerz.return');
-Route::get('/payments/sslcommerz/status/{orderId}', [PaymentController::class, 'checkStatus'])->name('payments.sslcommerz.status');
 
 // Cascading Location Reference endpoints (Public, Cacheable)
 Route::prefix('locations')->as('locations.')->group(function () {
@@ -127,6 +125,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/orders', [OrderController::class, 'store'])->middleware(['phone.verified', 'throttle:15,1'])->name('orders.store');
     Route::get('/orders/{order}', [OrderController::class, 'show'])->name('orders.show');
     Route::get('/orders/{order}/invoice', [InvoiceController::class, 'farmerInvoice'])->name('orders.invoice');
+    Route::get('/payments/sslcommerz/status/{orderId}', [PaymentController::class, 'checkStatus'])->name('payments.sslcommerz.status');
     Route::post('/coupons/validate', [\App\Http\Controllers\Api\V1\CouponController::class, 'validateCoupon'])->name('coupons.validate');
 
     // Product Reviews (Farmers after delivery)
@@ -202,6 +201,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::patch('/chat/conversations/{id}/reopen', [ChatController::class, 'reopen'])->name('chat.conversations.reopen');
     Route::get('/chat/unread-count', [ChatController::class, 'unreadCount'])->name('chat.unread-count');
     Route::get('/chat/canned-responses', [CannedResponseController::class, 'index'])->name('chat.canned-responses.index');
+    Route::get('/chat/attachments/stream', [ChatController::class, 'streamAttachment'])->name('chat.attachments.stream');
 
     // WebRTC Audio/Video Calling & Signaling (BDIX Coturn)
     Route::get('/chat/turn-credentials', [CallController::class, 'getTurnCredentials'])->name('chat.call.turn');
@@ -240,12 +240,10 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::patch('/farms/{farm}/images/{image}', [AdminFarmController::class, 'updateGalleryImage'])->name('farms.images.update');
         Route::get('/farms/{farm}/dossier', [AdminFarmController::class, 'dossier'])->name('farms.dossier');
 
-        // Farmers Directory & Management
+        // Farmers Directory & Management (DEO Read + Register + Avatar Only)
         Route::get('/farmers', [AdminFarmerController::class, 'index'])->name('farmers.index');
         Route::post('/farmers', [AdminFarmerController::class, 'store'])->name('farmers.store');
         Route::get('/farmers/{user}', [AdminFarmerController::class, 'show'])->name('farmers.show');
-        Route::match(['put', 'patch'], '/farmers/{user}', [AdminFarmerController::class, 'update'])->name('farmers.update');
-        Route::patch('/farmers/{user}/restriction', [AdminFarmerController::class, 'updateRestriction'])->name('farmers.restriction');
         Route::post('/farmers/{user}/avatar', [AdminFarmerController::class, 'uploadAvatar'])->name('farmers.avatar');
         Route::delete('/farmers/{user}/avatar', [AdminFarmerController::class, 'removeAvatar'])->name('farmers.avatar.delete');
 
@@ -277,6 +275,10 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::middleware('role:admin')->group(function () {
             // User Impersonation & Account Troubleshooting
             Route::post('/impersonate/{user}', [AdminImpersonationController::class, 'impersonate'])->name('impersonate');
+
+            // Farmer Account Modification & Blacklist/Restrictions (Admin Only)
+            Route::match(['put', 'patch'], '/farmers/{user}', [AdminFarmerController::class, 'update'])->name('farmers.update');
+            Route::patch('/farmers/{user}/restriction', [AdminFarmerController::class, 'updateRestriction'])->name('farmers.restriction');
 
             // Product Catalog Mutations & Stock Adjustments
             Route::post('/products', [AdminProductController::class, 'store'])->name('products.store');

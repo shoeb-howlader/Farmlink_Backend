@@ -370,7 +370,9 @@ class FarmerController extends ApiController
      */
     public function updateRestriction(Request $request, User $user): JsonResponse
     {
-        Gate::authorize('viewAdmin', \App\Models\Farm::class);
+        if (! $request->user()?->hasRole('admin')) {
+            abort(403, 'Unauthorized. Only administrators may modify farmer account restrictions.');
+        }
 
         if (! $user->hasRole('farmer')) {
             return response()->json([
@@ -460,7 +462,9 @@ class FarmerController extends ApiController
      */
     public function update(Request $request, User $user): JsonResponse
     {
-        Gate::authorize('viewAdmin', \App\Models\Farm::class);
+        if (! $request->user()?->hasRole('admin')) {
+            abort(403, 'Unauthorized. Only administrators may update farmer credentials and profiles.');
+        }
 
         // Ensure user is a farmer
         if (! $user->hasRole('farmer')) {

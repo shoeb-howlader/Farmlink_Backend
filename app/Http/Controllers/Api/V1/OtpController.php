@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Services\SmsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Validation\ValidationException;
 
 class OtpController extends ApiController
@@ -39,17 +40,36 @@ class OtpController extends ApiController
 
         $submittedOtp = trim($validated['otp']);
 
-        if (empty($user->phone_otp) || $user->phone_otp !== $submittedOtp) {
+        $cacheKey = "otp_verify_attempts_{$user->id}";
+        $attempts = (int) Cache::get($cacheKey, 0);
+
+        if ($attempts >= 5) {
+            // Lockout and invalidate code on repeated failed attempts to stop brute-forcing
+            $user->update([
+                'phone_otp' => null,
+                'phone_otp_expires_at' => null,
+            ]);
+            Cache::forget($cacheKey);
+            throw ValidationException::withMessages([
+                'otp' => ['Too many failed verification attempts. This verification code has been invalidated. Please request a new code.'],
+            ]);
+        }
+
+        if (empty($user->phone_otp) || ! hash_equals((string) $user->phone_otp, $submittedOtp)) {
+            Cache::put($cacheKey, $attempts + 1, now()->addMinutes(15));
             throw ValidationException::withMessages([
                 'otp' => ['Invalid verification code. Please check and try again.'],
             ]);
         }
 
         if ($user->phone_otp_expires_at && $user->phone_otp_expires_at->isPast()) {
+            Cache::forget($cacheKey);
             throw ValidationException::withMessages([
                 'otp' => ['Verification code has expired. Please request a new code.'],
             ]);
         }
+
+        Cache::forget($cacheKey);
 
         // Mark verified, immediately set status to active, and clear OTP
         $user->update([
@@ -115,6 +135,8 @@ class OtpController extends ApiController
         }
 
         $otp = sprintf('%06d', mt_rand(100000, 999999));
+
+        Cache::forget("otp_verify_attempts_{$user->id}");
 
         $user->update([
             'phone_otp' => $otp,

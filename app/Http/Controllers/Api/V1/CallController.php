@@ -20,11 +20,20 @@ class CallController extends ApiController
     public function getTurnCredentials(Request $request): JsonResponse
     {
         $user = $request->user();
-        $secret = config('webrtc.coturn.secret', 'farmlink_bdix_turn_secret_2026_x89q4w');
-        $host = config('webrtc.coturn.host', '165.99.219.252');
+        $secret = config('webrtc.coturn.secret');
+        $host = config('webrtc.coturn.host');
         $port = (int) config('webrtc.coturn.port', 3478);
         $tlsPort = (int) config('webrtc.coturn.tls_port', 5349);
         $ttl = (int) config('webrtc.coturn.ttl', 86400);
+
+        if (empty($secret) || empty($host)) {
+            return $this->successResponse([
+                'iceServers' => [
+                    ['urls' => 'stun:stun.l.google.com:19302'],
+                ],
+                'ttl' => 86400,
+            ]);
+        }
 
         // Standard WebRTC REST API ephemeral HMAC authentication
         $timestamp = time() + $ttl;

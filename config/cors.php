@@ -47,7 +47,7 @@ return [
     'allowed_origins' => $allowedOrigins,
 
     'allowed_origins_patterns' => [
-        '#^https?://(.*\.)?farmlinkcare\.com(:\d+)?$#',
+        '#^https://(.*\.)?farmlinkcare\.com(:\d+)?$#',
     ],
 
     'allowed_headers' => ['*'],

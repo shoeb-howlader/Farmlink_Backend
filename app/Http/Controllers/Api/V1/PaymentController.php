@@ -175,11 +175,16 @@ class PaymentController extends Controller
      */
     public function checkStatus(Request $request, int $orderId): JsonResponse
     {
+        $user = $request->user();
+        if (! $user) {
+            abort(401, 'Unauthenticated');
+        }
+
         $order = Order::findOrFail($orderId);
 
-        // Security check: ensure requesting user owns the order or is admin
-        if ($request->user() && $request->user()->id !== $order->user_id && ! $request->user()->hasRole('admin')) {
-            abort(403, 'Unauthorized');
+        // Security check: ensure requesting user owns the order or is staff/admin
+        if ($order->user_id !== $user->id && ! $user->hasAnyRole(['admin', 'data_entry_operator'])) {
+            abort(403, 'Unauthorized to view this order payment status.');
         }
 
         return response()->json([

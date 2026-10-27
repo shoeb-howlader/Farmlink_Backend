@@ -18,6 +18,8 @@ class OrderResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        $isStaffOrAdmin = (bool) $request->user()?->hasAnyRole(['admin', 'data_entry_operator']);
+
         return [
             'id' => $this->id,
             'invoice_number' => $this->invoice_number,
@@ -56,21 +58,21 @@ class OrderResource extends JsonResource
             'refunded_at' => $this->refunded_at?->toISOString(),
             'refund_reason' => $this->refund_reason,
             'notes' => $this->notes,
-            'ip_address' => $this->ip_address,
-            'user_agent' => $this->user_agent,
-            'ip_country' => $this->ip_country ?? 'BD',
-            'ip_city' => $this->ip_city,
-            'ip_region' => $this->ip_region,
-            'ip_isp' => $this->ip_isp,
+            'ip_address' => $this->when($isStaffOrAdmin, $this->ip_address),
+            'user_agent' => $this->when($isStaffOrAdmin, $this->user_agent),
+            'ip_country' => $this->when($isStaffOrAdmin, $this->ip_country ?? 'BD'),
+            'ip_city' => $this->when($isStaffOrAdmin, $this->ip_city),
+            'ip_region' => $this->when($isStaffOrAdmin, $this->ip_region),
+            'ip_isp' => $this->when($isStaffOrAdmin, $this->ip_isp),
             'advance_delivery_fee' => (float) ($this->advance_delivery_fee ?? 0.00),
             'advance_paid_at' => $this->advance_paid_at?->toISOString(),
-            'risk_score' => (int) ($this->risk_score ?? 0),
-            'risk_level' => $this->risk_level ?? 'low',
-            'is_flagged' => (bool) ($this->is_flagged ?? false),
-            'flag_reasons' => $this->flag_reasons ?? [],
-            'verification_status' => $this->verification_status ?? 'unverified',
-            'verified_at' => $this->verified_at?->toISOString(),
-            'verified_by' => $this->verified_by,
+            'risk_score' => $this->when($isStaffOrAdmin, (int) ($this->risk_score ?? 0)),
+            'risk_level' => $this->when($isStaffOrAdmin, $this->risk_level ?? 'low'),
+            'is_flagged' => $this->when($isStaffOrAdmin, (bool) ($this->is_flagged ?? false)),
+            'flag_reasons' => $this->when($isStaffOrAdmin, $this->flag_reasons ?? []),
+            'verification_status' => $this->when($isStaffOrAdmin, $this->verification_status ?? 'unverified'),
+            'verified_at' => $this->when($isStaffOrAdmin, $this->verified_at?->toISOString()),
+            'verified_by' => $this->when($isStaffOrAdmin, $this->verified_by),
             'subtotal' => (float) ($this->subtotal ?? $this->total),
             'delivery_fee' => (float) ($this->delivery_fee ?? 0.00),
             'discount_amount' => (float) ($this->discount_amount ?? 0.00),

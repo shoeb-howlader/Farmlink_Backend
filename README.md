@@ -263,9 +263,12 @@ In rural Bangladesh and developing agricultural corridors, mobile operators (Gra
 
 ---
 
-### 🖥️ Native Ubuntu Server Installation (Recommended)
+### 🖥️ Dedicated Standalone Ubuntu Server Setup (Not in Coolify Docker)
 
-Running Coturn directly on Ubuntu via `systemd` is the **industry-standard, high-performance architecture** for WebRTC relay servers, as the Linux kernel directly routes high-throughput dynamic UDP streams (`49152–65535`) with zero container/NAT overhead.
+Running Coturn directly on a standalone Ubuntu host via `systemd` (completely outside Coolify's Docker environment) is the **industry-standard, high-performance architecture** for WebRTC relay servers.
+
+> **Why outside Coolify/Docker?**
+> Coturn allocates thousands of dynamic media relay UDP ports (`49152–65535`). Running this inside a Docker container creates huge Docker NAT/`docker-proxy` overhead, potential port allocation exhaustion, and packet latency. Running natively on Ubuntu gives the Linux kernel direct, line-rate UDP throughput for real-time video/audio.
 
 #### 1. Install Coturn on Ubuntu
 ```bash
@@ -357,16 +360,16 @@ sudo systemctl status coturn
 
 ### ⚙️ Connecting Laravel Backend to Coturn
 
-Add the Coturn connection parameters to your `.env` file:
+Add the Coturn connection parameters to your Laravel `.env` file (e.g. on Coolify or host):
 
 ```env
 # ------------------------------------------------------------------------------
-# 12. WEBRTC AUDIO & VIDEO CALLING (Coturn TURN/STUN - Coolify / BDIX)
+# 12. WEBRTC AUDIO & VIDEO CALLING (Coturn TURN/STUN - Standalone Ubuntu BDIX Server)
 # ------------------------------------------------------------------------------
-COTURN_HOST=turn.farmlinkcare.com    # Domain or Public IP of your Coturn instance
+COTURN_HOST=165.99.219.252           # Public IP or Domain of the standalone Ubuntu Coturn server
 COTURN_PORT=3478                    # Default UDP/TCP port
 COTURN_TLS_PORT=5349                # Secure TLS port
-COTURN_REALM=farmlinkcare.com       # Matches 'realm' in turnserver.conf
+COTURN_REALM=farmlinkcare.com       # Matches 'realm' in /etc/turnserver.conf
 COTURN_SECRET=farmlink_bdix_turn_secret_2026_x89q4w # Matches 'static-auth-secret'
 COTURN_TTL=86400                    # Credential lifetime (seconds)
 ```

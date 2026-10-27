@@ -149,9 +149,12 @@ class ReportController extends ApiController
 
         // Monthly registration trend for the last 6 months
         $sixMonthsAgo = now()->subMonths(5)->startOfMonth();
-        $dateExpr = DB::connection()->getDriverName() === 'sqlite'
-            ? 'strftime("%Y-%m", created_at) as month_key'
-            : 'DATE_FORMAT(created_at, "%Y-%m") as month_key';
+        $driver = DB::connection()->getDriverName();
+        $dateExpr = match ($driver) {
+            'sqlite' => 'strftime("%Y-%m", created_at) as month_key',
+            'pgsql' => "to_char(created_at, 'YYYY-MM') as month_key",
+            default => 'DATE_FORMAT(created_at, "%Y-%m") as month_key',
+        };
 
         $monthlyRegistrations = (clone $farmersQuery)
             ->where('created_at', '>=', $sixMonthsAgo)

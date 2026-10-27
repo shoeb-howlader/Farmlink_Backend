@@ -973,24 +973,53 @@ class ChatController extends ApiController
     }
 
     /**
-     * Stream a chat attachment file with permissive CORS headers for in-modal preview and download.
+     * Stream a chat attachment file with authentication, path confinement, and conversation authorization.
      */
     public function streamAttachment(Request $request): mixed
     {
-        $path = $request->query('path');
-        if (! $path) {
-            abort(400, 'Missing attachment path');
+        $user = $request->user();
+        if (! $user) {
+            abort(401, 'Unauthenticated');
         }
 
-        // Clean and normalize path, preventing directory traversal
-        $cleanPath = ltrim(str_replace(['../', '..\\'], '', $path), '/');
-        if (str_contains($cleanPath, 'storage/')) {
-            $cleanPath = substr($cleanPath, strpos($cleanPath, 'storage/') + 8);
+        $path = $request->query('path');
+        if (! $path || ! is_string($path)) {
+            abort(400, 'Missing or invalid attachment path');
+        }
+
+        // Strictly reject any traversal patterns
+        if (str_contains($path, '..')) {
+            abort(400, 'Invalid attachment path');
+        }
+
+        $cleanPath = ltrim($path, '/');
+        if (str_starts_with($cleanPath, 'storage/')) {
+            $cleanPath = substr($cleanPath, 8);
+        }
+
+        // Confine file access strictly to chat attachments
+        if (! str_starts_with($cleanPath, 'chat_attachments/')) {
+            abort(403, 'Unauthorized attachment location');
         }
 
         $disk = \Illuminate\Support\Facades\Storage::disk('public');
         if (! $disk->exists($cleanPath)) {
             abort(404, 'Attachment file not found');
+        }
+
+        // Check if user has permission to access the conversation owning this attachment
+        $message = Message::where('attachment_path', $cleanPath)
+            ->orWhere('attachment_path', 'storage/' . $cleanPath)
+            ->orWhere('attachment_path', '/' . $cleanPath)
+            ->first();
+
+        if ($message) {
+            $conversation = $message->conversation;
+            if ($conversation && ! $this->canAccessConversation($user, $conversation)) {
+                abort(403, 'Unauthorized access to chat attachment.');
+            }
+        } elseif (! $user->hasAnyRole(['admin', 'data_entry_operator'])) {
+            abort(403, 'Unauthorized access to chat attachment.');
         }
 
         $mimeType = $disk->mimeType($cleanPath) ?: 'application/octet-stream';
@@ -1000,10 +1029,8 @@ class ChatController extends ApiController
         return response()->file($fullPath, [
             'Content-Type' => $mimeType,
             'Content-Disposition' => 'inline; filename="' . $fileName . '"',
-            'Access-Control-Allow-Origin' => '*',
-            'Access-Control-Allow-Methods' => 'GET, HEAD, OPTIONS',
-            'Access-Control-Expose-Headers' => 'Content-Disposition, Content-Length',
-            'Cache-Control' => 'public, max-age=86400',
+            'X-Content-Type-Options' => 'nosniff',
+            'Cache-Control' => 'private, max-age=3600',
         ]);
     }
 }
