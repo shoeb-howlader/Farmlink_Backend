@@ -15,6 +15,7 @@ use App\Http\Controllers\Api\V1\Admin\ReportController as AdminReportController;
 use App\Http\Controllers\Api\V1\Admin\SearchController as AdminSearchController;
 use App\Http\Controllers\Api\V1\Admin\ServiceRequestController as AdminServiceRequestController;
 use App\Http\Controllers\Api\V1\Admin\StaffController as AdminStaffController;
+use App\Http\Controllers\Api\V1\Admin\UserController as AdminUserController;
 use App\Http\Controllers\Api\V1\Admin\VetConsultantRecordController as AdminVetConsultantRecordController;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\CallController;
@@ -275,6 +276,12 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::middleware('role:admin')->group(function () {
             // User Impersonation & Account Troubleshooting
             Route::post('/impersonate/{user}', [AdminImpersonationController::class, 'impersonate'])->name('impersonate');
+
+            // User Management & Credentials (Name, Email, Phone, Role, Password Reset for Any User)
+            Route::get('/users', [AdminUserController::class, 'index'])->name('users.index');
+            Route::get('/users/{user}', [AdminUserController::class, 'show'])->name('users.show');
+            Route::match(['put', 'patch'], '/users/{user}', [AdminUserController::class, 'update'])->name('users.update');
+            Route::post('/users/{user}/reset-password', [AdminUserController::class, 'resetPassword'])->name('users.reset-password');
 
             // Farmer Account Modification & Blacklist/Restrictions (Admin Only)
             Route::match(['put', 'patch'], '/farmers/{user}', [AdminFarmerController::class, 'update'])->name('farmers.update');
