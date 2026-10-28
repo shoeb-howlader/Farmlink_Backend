@@ -75,13 +75,19 @@ class LeadInquiryController extends ApiController
             $query->where('status', $request->query('status'));
         }
 
+        if ($request->filled('source') && $request->query('source') !== 'all') {
+            $query->where('source', $request->query('source'));
+        }
+
         if ($request->filled('search')) {
             $search = trim($request->query('search'));
-            $query->where(function ($q) use ($search) {
-                $q->where('name', 'like', "%{$search}%")
-                  ->orWhere('phone', 'like', "%{$search}%")
-                  ->orWhere('topic', 'like', "%{$search}%")
-                  ->orWhere('message', 'like', "%{$search}%");
+            $operator = \Illuminate\Support\Facades\DB::connection()->getDriverName() === 'pgsql' ? 'ilike' : 'like';
+            $query->where(function ($q) use ($search, $operator) {
+                $q->where('name', $operator, "%{$search}%")
+                  ->orWhere('phone', $operator, "%{$search}%")
+                  ->orWhere('email', $operator, "%{$search}%")
+                  ->orWhere('topic', $operator, "%{$search}%")
+                  ->orWhere('message', $operator, "%{$search}%");
             });
         }
 

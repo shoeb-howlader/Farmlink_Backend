@@ -2,17 +2,16 @@
 
 namespace Tests\Feature;
 
-use App\Mail\ContactSubmissionMail;
+use App\Models\LeadInquiry;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Mail;
 use Tests\TestCase;
 
 class ContactFormTest extends TestCase
 {
-    public function test_contact_submission_succeeds_and_queues_email(): void
-    {
-        Mail::fake();
+    use RefreshDatabase;
 
+    public function test_contact_submission_succeeds_and_saves_to_database(): void
+    {
         $payload = [
             'name' => 'Kalam Chowdhury',
             'email' => 'kalam@farmlink-test.com',
@@ -25,21 +24,31 @@ class ContactFormTest extends TestCase
         $response->assertStatus(200)
             ->assertJson([
                 'success' => true,
+                'data' => [
+                    'name' => 'Kalam Chowdhury',
+                    'status' => 'new',
+                    'source' => 'contact_page',
+                ],
             ])
-            ->assertJsonStructure(['success', 'message']);
+            ->assertJsonStructure(['success', 'message', 'data']);
 
-        Mail::assertQueued(ContactSubmissionMail::class, function ($mail) use ($payload) {
-            return $mail->name === $payload['name']
-                && $mail->email === $payload['email']
-                && $mail->inquirySubject === $payload['subject']
-                && $mail->messageText === $payload['message'];
-        });
+        $this->assertDatabaseHas('lead_inquiries', [
+            'name' => $payload['name'],
+            'email' => $payload['email'],
+            'topic' => $payload['subject'],
+            'message' => $payload['message'],
+            'source' => 'contact_page',
+            'status' => 'new',
+        ]);
+
+        $this->assertDatabaseHas('admin_notifications', [
+            'type' => 'lead.inquiry',
+            'title' => 'New Contact Message: Kalam Chowdhury',
+        ]);
     }
 
     public function test_contact_submission_also_works_on_v1_route(): void
     {
-        Mail::fake();
-
         $payload = [
             'name' => 'Rahim Uddin',
             'email' => 'rahim@farmlink-test.com',
@@ -52,7 +61,12 @@ class ContactFormTest extends TestCase
         $response->assertStatus(200)
             ->assertJson(['success' => true]);
 
-        Mail::assertQueued(ContactSubmissionMail::class);
+        $this->assertDatabaseHas('lead_inquiries', [
+            'name' => 'Rahim Uddin',
+            'email' => 'rahim@farmlink-test.com',
+            'topic' => 'Veterinary Consultation Booking',
+            'source' => 'contact_page',
+        ]);
     }
 
     public function test_contact_form_validates_required_fields(): void
@@ -89,10 +103,8 @@ class ContactFormTest extends TestCase
             ->assertJsonValidationErrors(['name', 'subject', 'message']);
     }
 
-    public function test_honeypot_field_tripped_by_bot_rejects_email(): void
+    public function test_honeypot_field_tripped_by_bot_rejects_storage(): void
     {
-        Mail::fake();
-
         $payload = [
             'name' => 'Spam Bot',
             'email' => 'spambot@example.com',
@@ -103,16 +115,14 @@ class ContactFormTest extends TestCase
 
         $response = $this->postJson('/api/contact', $payload);
 
-        // Either prohibited validation failure (422) or silent trap (200)
-        // In both cases, mail MUST NOT be queued!
         $this->assertTrue(in_array($response->status(), [200, 422], true));
-        Mail::assertNotQueued(ContactSubmissionMail::class);
+        $this->assertDatabaseMissing('lead_inquiries', [
+            'email' => 'spambot@example.com',
+        ]);
     }
 
     public function test_contact_form_rate_limits_after_five_requests(): void
     {
-        Mail::fake();
-
         $payload = [
             'name' => 'Rapid Submitter',
             'email' => 'rapid@example.com',
