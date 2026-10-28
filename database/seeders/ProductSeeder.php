@@ -530,22 +530,20 @@ class ProductSeeder extends Seeder
                 'products/75a89a6f-c817-4638-a91a-a69b73a7cfb3.jpg',
             ],
             'Probiotics' => [
-                'products/281cd32e-770a-40ec-afb9-d921d6252195.jpg',
-                'products/8e586534-6943-4581-adc0-dc1f1d7685f2.jpg',
+                'products/bio-bacillus-probiotic-1kg.jpg',
             ],
             'Equipment' => [
+                'products/solar-quad-paddlewheel-aerator-2hp.jpg',
                 'products/d8a9e53d-5203-4186-aa0b-d5df62b609c9.jpg',
-                'products/dd7d302b-a301-41af-9eff-79aa991d7789.jpg',
             ],
             'Chemicals' => [
+                'products/aquaclean-water-conditioner-1l.jpg',
                 'products/a1277515-0cf7-45c4-a57a-a233828bf93e.jpg',
-                'products/e04d4797-cefe-48f7-b140-05566f1d8bd8.jpg',
             ],
             'Medicine' => [
-                'products/8855340a-a2a0-47fe-9aff-70b80fa951b4.png',
+                'products/aqua-c-50-ascorbic-acid.jpg',
                 'products/3caf186a-8ddb-4781-9b49-bc6bcefc868a.jpg',
                 'products/dd932b71-d3ec-4e59-976c-9abaefcf350e.jpg',
-                'products/e8ddc697-bf83-4b66-934f-2204123bcf94.jpg',
             ],
         ];
 
