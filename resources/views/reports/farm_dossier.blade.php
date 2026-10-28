@@ -457,7 +457,18 @@
     <table class="header-table">
         <tr>
             <td style="width: 58%; vertical-align: middle;">
-                <div class="logo-title">FARMLINK</div>
+                @php
+                    $customLogo = \App\Models\Setting::get('site_logo_url');
+                    $localBrandLogo = public_path('brand/logo-horizontal.png');
+                    $base64Logo = file_exists($localBrandLogo) ? 'data:image/png;base64,' . base64_encode(file_get_contents($localBrandLogo)) : null;
+                @endphp
+                @if($customLogo)
+                    <img src="{{ $customLogo }}" alt="FarmLink Care" style="max-height: 38px; max-width: 170px; margin-bottom: 3px; display: block;" />
+                @elseif($base64Logo)
+                    <img src="{{ $base64Logo }}" alt="FarmLink Care" style="max-height: 36px; max-width: 165px; margin-bottom: 3px; display: block;" />
+                @else
+                    <div class="logo-title">FARMLINK CARE</div>
+                @endif
                 <div class="logo-subtitle">Digital Aquaculture Governance & Technical Platform</div>
                 <div class="dossier-title-bn">খামার পরিচিতি ও মৎস্য চাষ প্রযুক্তিগত বিবরণী (ডোসিয়ার)</div>
                 <div style="margin-top: 4px;">

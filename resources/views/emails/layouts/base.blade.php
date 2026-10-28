@@ -16,10 +16,10 @@
         .main-card { max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; overflow: hidden; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05); }
 
         /* Header */
-        .header { background: linear-gradient(135deg, #15803d 0%, #16a34a 100%); padding: 32px 28px; text-align: center; }
-        .logo-badge { display: inline-block; background-color: rgba(255, 255, 255, 0.2); border-radius: 12px; padding: 8px 16px; margin-bottom: 8px; }
+        .header { background: linear-gradient(135deg, #004064 0%, #002236 100%); padding: 32px 28px; text-align: center; }
+        .logo-badge { display: inline-block; background-color: rgba(255, 255, 255, 0.08); border-radius: 12px; padding: 10px 20px; margin-bottom: 6px; }
         .logo-text { font-size: 24px; font-weight: 800; color: #ffffff; letter-spacing: -0.5px; text-decoration: none; }
-        .logo-sub { color: #dcfce7; font-size: 13px; font-weight: 500; margin-top: 4px; }
+        .logo-sub { color: #bae6fd; font-size: 13px; font-weight: 500; margin-top: 4px; }
 
         /* Content */
         .content { padding: 36px 32px; }
@@ -71,9 +71,21 @@
                         <!-- Branded Header -->
                         <div class="header">
                             <div class="logo-badge">
-                                <span class="logo-text">🌾 FarmLink</span>
+                                @php
+                                    $customLogo = \App\Models\Setting::get('site_logo_url');
+                                    $localWhiteLogo = public_path('brand/logo-horizontal-white.png');
+                                @endphp
+                                @if($customLogo)
+                                    <img src="{{ $customLogo }}" alt="{{ \App\Models\Setting::get('site_name', 'FarmLink Care') }}" style="max-height: 38px; max-width: 175px; object-fit: contain; vertical-align: middle;">
+                                @elseif(file_exists($localWhiteLogo) && isset($message))
+                                    <img src="{{ $message->embed($localWhiteLogo) }}" alt="FarmLink Care" style="max-height: 36px; max-width: 170px; object-fit: contain; vertical-align: middle;">
+                                @elseif(file_exists($localWhiteLogo))
+                                    <img src="{{ config('app.url') . '/brand/logo-horizontal-white.png' }}" alt="FarmLink Care" style="max-height: 36px; max-width: 170px; object-fit: contain; vertical-align: middle;">
+                                @else
+                                    <span class="logo-text">FarmLink <span style="color: #00ACF0;">Care</span></span>
+                                @endif
                             </div>
-                            <div class="logo-sub">Smart Agriculture & Farm Care Platform</div>
+                            <div class="logo-sub">Smart Aquaculture & Farm Care Platform</div>
                         </div>
 
                         <!-- Email Body Content -->

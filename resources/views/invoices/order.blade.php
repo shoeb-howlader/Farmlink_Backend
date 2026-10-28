@@ -234,10 +234,18 @@
     <table class="header-table" cellpadding="0" cellspacing="0">
         <tr>
             <td style="vertical-align: middle;">
-                @if(\App\Models\Setting::get('site_logo_url'))
-                    <img src="{{ \App\Models\Setting::get('site_logo_url') }}" alt="{{ \App\Models\Setting::get('site_name', 'FarmLink') }}" style="max-height: 44px; max-width: 180px; object-fit: contain; margin-bottom: 4px; display: block;" />
+                @php
+                    $customLogo = \App\Models\Setting::get('site_logo_url');
+                    $localBrandLogo = public_path('brand/logo-horizontal.png');
+                    $base64Logo = file_exists($localBrandLogo) ? 'data:image/png;base64,' . base64_encode(file_get_contents($localBrandLogo)) : null;
+                @endphp
+                @if($customLogo)
+                    <img src="{{ $customLogo }}" alt="{{ \App\Models\Setting::get('site_name', 'FarmLink Care') }}" style="max-height: 44px; max-width: 180px; object-fit: contain; margin-bottom: 4px; display: block;" />
+                @elseif($base64Logo)
+                    <img src="{{ $base64Logo }}" alt="FarmLink Care" style="max-height: 40px; max-width: 175px; object-fit: contain; margin-bottom: 4px; display: block;" />
+                @else
+                    <h1 class="logo-title">{{ \App\Models\Setting::get('site_name', 'FarmLink Care') }}</h1>
                 @endif
-                <h1 class="logo-title">{{ \App\Models\Setting::get('site_name', 'FarmLink') }}</h1>
                 <div class="logo-subtitle">Aquaculture Supply & Advisory Network</div>
             </td>
             <td class="company-meta" style="vertical-align: middle;">
