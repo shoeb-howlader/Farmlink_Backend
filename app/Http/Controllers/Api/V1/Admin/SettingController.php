@@ -76,7 +76,7 @@ class SettingController extends ApiController
             'settings.default_locale_deo' => ['nullable', 'string', 'in:bn,en'],
             'settings.default_locale_vet' => ['nullable', 'string', 'in:bn,en'],
             'settings.default_locale_consultant' => ['nullable', 'string', 'in:bn,en'],
-            'settings.brand_primary_color' => ['nullable', 'string', 'in:emerald,teal,cyan,blue,indigo,violet,amber,rose,forest,sky,bronze,slate'],
+            'settings.brand_primary_color' => ['nullable', 'string', 'in:farmlink,emerald,teal,cyan,blue,indigo,violet,amber,rose,forest,sky,bronze,slate'],
             'settings.brand_font_preset' => ['nullable', 'string', 'in:hind_siliguri,noto_sans_bengali,anek_bangla,tiro_bangla,baloo_da_2,mina,noto_serif_bengali'],
             'settings.default_appearance_mode' => ['nullable', 'string', 'in:system,light,dark'],
         ]);
@@ -182,7 +182,7 @@ class SettingController extends ApiController
                 : null,
             'pwa_dismissal_duration_days' => (int) Setting::get('pwa_dismissal_duration_days', 30),
             'default_public_locale' => Setting::get('default_public_locale', 'bn'),
-            'brand_primary_color' => Setting::get('brand_primary_color', 'emerald'),
+            'brand_primary_color' => Setting::get('brand_primary_color', 'farmlink'),
             'brand_font_preset' => Setting::get('brand_font_preset', 'hind_siliguri'),
             'default_appearance_mode' => Setting::get('default_appearance_mode', 'system'),
             'default_role_locales' => [

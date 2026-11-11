@@ -535,10 +535,10 @@ class SettingsAndCouponsTest extends TestCase
 
     public function test_admin_can_update_guarded_branding_and_appearance_presets(): void
     {
-        // 1. Initial public settings has default emerald branding and hind_siliguri font
+        // 1. Initial public settings has default farmlink branding and hind_siliguri font
         $resPublic = $this->getJson('/api/v1/settings/public');
         $resPublic->assertOk()
-            ->assertJsonPath('data.brand_primary_color', 'emerald')
+            ->assertJsonPath('data.brand_primary_color', 'farmlink')
             ->assertJsonPath('data.brand_font_preset', 'hind_siliguri')
             ->assertJsonPath('data.default_appearance_mode', 'system');
 
