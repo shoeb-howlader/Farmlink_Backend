@@ -3,11 +3,10 @@
 namespace App\Http\Controllers\Api\V1\Admin;
 
 use App\Http\Controllers\Api\V1\ApiController;
-use App\Models\Farm;
-use App\Models\PondTelemetry;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 class AdminTelemetryHeatmapController extends ApiController
@@ -15,158 +14,228 @@ class AdminTelemetryHeatmapController extends ApiController
     /**
      * Display aggregated district and upazila water quality heatmap data
      * for Fisheries Department and Administrative oversight.
+     *
+     * Optimized with database-level SQL aggregation and short-term caching
+     * to eliminate memory exhaustion and 504 timeouts under high load.
      */
     public function index(Request $request): JsonResponse
     {
         $days = max(1, min((int) ($request->query('days') ?? 14), 90));
-        $since = Carbon::now()->subDays($days);
+        $cacheKey = "admin_telemetry_district_heatmap_{$days}";
 
-        // Fetch recent telemetries with farm details
-        $telemetries = PondTelemetry::with(['farm.user', 'user'])
-            ->where('recorded_at', '>=', $since)
-            ->whereHas('farm')
-            ->orderBy('recorded_at', 'desc')
-            ->get();
+        $data = Cache::remember($cacheKey, 300, function () use ($days) {
+            $since = Carbon::now()->subDays($days);
 
-        // Group by district (normalize fallback)
-        $districtGroups = $telemetries->groupBy(function ($t) {
-            $district = $t->farm->district ?? 'Other / Unassigned';
-            return trim($district) ?: 'Other / Unassigned';
-        });
+            // 1. Fetch district-level aggregates directly via SQL
+            $districtRows = DB::table('pond_telemetries')
+                ->join('farms', 'farms.id', '=', 'pond_telemetries.farm_id')
+                ->where('pond_telemetries.recorded_at', '>=', $since)
+                ->selectRaw("
+                    COALESCE(NULLIF(TRIM(farms.district), ''), 'Other / Unassigned') as district_name,
+                    COUNT(DISTINCT pond_telemetries.farm_id) as farms_count,
+                    COUNT(pond_telemetries.id) as total_readings,
+                    AVG(pond_telemetries.dissolved_oxygen) as avg_do,
+                    MIN(pond_telemetries.dissolved_oxygen) as min_do,
+                    AVG(pond_telemetries.ph) as avg_ph,
+                    AVG(pond_telemetries.salinity) as avg_salinity,
+                    AVG(pond_telemetries.temperature) as avg_temperature,
+                    SUM(CASE WHEN pond_telemetries.dissolved_oxygen IS NOT NULL AND pond_telemetries.dissolved_oxygen < 3.5 THEN 1 ELSE 0 END) as hypoxia_count,
+                    SUM(CASE WHEN pond_telemetries.ph IS NOT NULL AND (pond_telemetries.ph < 7.0 OR pond_telemetries.ph > 9.0) THEN 1 ELSE 0 END) as abnormal_ph_count,
+                    SUM(CASE WHEN pond_telemetries.ammonia IS NOT NULL AND pond_telemetries.ammonia > 0.1 THEN 1 ELSE 0 END) as toxic_ammonia_count
+                ")
+                ->groupByRaw("COALESCE(NULLIF(TRIM(farms.district), ''), 'Other / Unassigned')")
+                ->get();
 
-        $districtHeatmap = [];
-        $totalHypoxiaCount = 0;
-        $totalReadings = $telemetries->count();
-        $totalFarmsSet = [];
-
-        foreach ($districtGroups as $districtName => $districtLogs) {
-            $farmIdsInDistrict = $districtLogs->pluck('farm_id')->unique()->all();
-            foreach ($farmIdsInDistrict as $fId) {
-                $totalFarmsSet[$fId] = true;
-            }
-
-            $hypoxiaCount = $districtLogs->filter(fn ($t) => !is_null($t->dissolved_oxygen) && (float) $t->dissolved_oxygen < 3.5)->count();
-            $abnormalPhCount = $districtLogs->filter(fn ($t) => !is_null($t->ph) && ((float) $t->ph < 7.0 || (float) $t->ph > 9.0))->count();
-            $toxicAmmoniaCount = $districtLogs->filter(fn ($t) => !is_null($t->ammonia) && (float) $t->ammonia > 0.1)->count();
-
-            $totalHypoxiaCount += $hypoxiaCount;
-
-            $validDo = $districtLogs->whereNotNull('dissolved_oxygen')->pluck('dissolved_oxygen');
-            $validPh = $districtLogs->whereNotNull('ph')->pluck('ph');
-            $validSalinity = $districtLogs->whereNotNull('salinity')->pluck('salinity');
-            $validTemp = $districtLogs->whereNotNull('temperature')->pluck('temperature');
-
-            $avgDo = $validDo->count() > 0 ? round($validDo->avg(), 2) : null;
-            $minDo = $validDo->count() > 0 ? round($validDo->min(), 2) : null;
-            $avgPh = $validPh->count() > 0 ? round($validPh->avg(), 2) : null;
-            $avgSalinity = $validSalinity->count() > 0 ? round($validSalinity->avg(), 1) : null;
-            $avgTemp = $validTemp->count() > 0 ? round($validTemp->avg(), 1) : null;
-
-            // Health status for the district
-            $riskLevel = 'optimal';
-            if ($hypoxiaCount > 0 || ($avgDo !== null && $avgDo < 4.0)) {
-                $riskLevel = 'critical';
-            } elseif (($avgDo !== null && $avgDo < 5.0) || $abnormalPhCount > 0) {
-                $riskLevel = 'warning';
-            }
-
-            // Upazila breakdown
-            $upazilaGroups = $districtLogs->groupBy(function ($t) {
-                return trim($t->farm->upazila ?? 'General') ?: 'General';
-            });
-
-            $upazilaList = [];
-            foreach ($upazilaGroups as $upazilaName => $upazilaLogs) {
-                $uDo = $upazilaLogs->whereNotNull('dissolved_oxygen')->pluck('dissolved_oxygen');
-                $uHypoxia = $upazilaLogs->filter(fn ($t) => !is_null($t->dissolved_oxygen) && (float) $t->dissolved_oxygen < 3.5)->count();
-                $uAvgDo = $uDo->count() > 0 ? round($uDo->avg(), 2) : null;
-
-                $uRisk = 'optimal';
-                if ($uHypoxia > 0 || ($uAvgDo !== null && $uAvgDo < 4.0)) {
-                    $uRisk = 'critical';
-                } elseif ($uAvgDo !== null && $uAvgDo < 5.0) {
-                    $uRisk = 'warning';
-                }
-
-                // Sample recent critical farms in this upazila
-                $recentCriticalAlerts = $upazilaLogs
-                    ->filter(fn ($t) => !is_null($t->dissolved_oxygen) && (float) $t->dissolved_oxygen < 3.5)
-                    ->take(3)
-                    ->map(fn ($t) => [
-                        'farm_id' => $t->farm_id,
-                        'farm_name' => $t->farm->farm_name,
-                        'owner_name' => $t->farm->user?->name,
-                        'owner_phone' => $t->farm->user?->phone,
-                        'pond_name' => $t->pond_name,
-                        'dissolved_oxygen' => $t->dissolved_oxygen,
-                        'recorded_at' => $t->recorded_at?->toIso8601String(),
-                    ])
-                    ->values();
-
-                $upazilaList[] = [
-                    'upazila_name' => $upazilaName,
-                    'farms_count' => $upazilaLogs->pluck('farm_id')->unique()->count(),
-                    'total_readings' => $upazilaLogs->count(),
-                    'avg_do' => $uAvgDo,
-                    'hypoxia_count' => $uHypoxia,
-                    'risk_level' => $uRisk,
-                    'critical_farms' => $recentCriticalAlerts,
+            if ($districtRows->isEmpty()) {
+                return [
+                    'time_window_days' => $days,
+                    'summary_kpis' => [
+                        'monitored_districts_count' => 0,
+                        'total_farms_monitored' => 0,
+                        'total_readings_window' => 0,
+                        'total_hypoxia_alerts' => 0,
+                        'critical_districts_count' => 0,
+                        'safe_water_compliance_percent' => 100.0,
+                    ],
+                    'districts' => [],
                 ];
             }
 
-            // Sort upazilas: critical first
-            usort($upazilaList, function ($a, $b) {
+            // 2. Fetch upazila-level aggregates directly via SQL
+            $upazilaRows = DB::table('pond_telemetries')
+                ->join('farms', 'farms.id', '=', 'pond_telemetries.farm_id')
+                ->where('pond_telemetries.recorded_at', '>=', $since)
+                ->selectRaw("
+                    COALESCE(NULLIF(TRIM(farms.district), ''), 'Other / Unassigned') as district_name,
+                    COALESCE(NULLIF(TRIM(farms.upazila), ''), 'General') as upazila_name,
+                    COUNT(DISTINCT pond_telemetries.farm_id) as farms_count,
+                    COUNT(pond_telemetries.id) as total_readings,
+                    AVG(pond_telemetries.dissolved_oxygen) as avg_do,
+                    SUM(CASE WHEN pond_telemetries.dissolved_oxygen IS NOT NULL AND pond_telemetries.dissolved_oxygen < 3.5 THEN 1 ELSE 0 END) as hypoxia_count
+                ")
+                ->groupByRaw("
+                    COALESCE(NULLIF(TRIM(farms.district), ''), 'Other / Unassigned'),
+                    COALESCE(NULLIF(TRIM(farms.upazila), ''), 'General')
+                ")
+                ->get()
+                ->groupBy('district_name');
+
+            // 3. Fetch recent critical alerts (max 200 recent rows total, avoiding loading all models into RAM)
+            $criticalLogs = DB::table('pond_telemetries')
+                ->join('farms', 'farms.id', '=', 'pond_telemetries.farm_id')
+                ->leftJoin('users', 'users.id', '=', 'farms.user_id')
+                ->where('pond_telemetries.recorded_at', '>=', $since)
+                ->where('pond_telemetries.dissolved_oxygen', '<', 3.5)
+                ->select([
+                    'pond_telemetries.farm_id',
+                    'farms.farm_name',
+                    'farms.district',
+                    'farms.upazila',
+                    'users.name as owner_name',
+                    'users.phone as owner_phone',
+                    'pond_telemetries.pond_name',
+                    'pond_telemetries.dissolved_oxygen',
+                    'pond_telemetries.recorded_at',
+                ])
+                ->orderBy('pond_telemetries.recorded_at', 'desc')
+                ->limit(200)
+                ->get()
+                ->groupBy(function ($item) {
+                    $d = trim($item->district ?? 'Other / Unassigned') ?: 'Other / Unassigned';
+                    $u = trim($item->upazila ?? 'General') ?: 'General';
+                    return "{$d}::{$u}";
+                });
+
+            // 4. Global KPIs
+            $totalFarmsMonitored = (int) DB::table('pond_telemetries')
+                ->join('farms', 'farms.id', '=', 'pond_telemetries.farm_id')
+                ->where('pond_telemetries.recorded_at', '>=', $since)
+                ->distinct('pond_telemetries.farm_id')
+                ->count('pond_telemetries.farm_id');
+
+            $totalReadings = (int) $districtRows->sum('total_readings');
+            $totalHypoxiaCount = (int) $districtRows->sum('hypoxia_count');
+
+            $districtHeatmap = [];
+
+            foreach ($districtRows as $row) {
+                $districtName = (string) $row->district_name;
+                $hypoxiaCount = (int) $row->hypoxia_count;
+                $abnormalPhCount = (int) $row->abnormal_ph_count;
+                $toxicAmmoniaCount = (int) $row->toxic_ammonia_count;
+
+                $avgDo = $row->avg_do !== null ? round((float) $row->avg_do, 2) : null;
+                $minDo = $row->min_do !== null ? round((float) $row->min_do, 2) : null;
+                $avgPh = $row->avg_ph !== null ? round((float) $row->avg_ph, 2) : null;
+                $avgSalinity = $row->avg_salinity !== null ? round((float) $row->avg_salinity, 1) : null;
+                $avgTemp = $row->avg_temperature !== null ? round((float) $row->avg_temperature, 1) : null;
+
+                // Determine district risk level
+                $riskLevel = 'optimal';
+                if ($hypoxiaCount > 0 || ($avgDo !== null && $avgDo < 4.0)) {
+                    $riskLevel = 'critical';
+                } elseif (($avgDo !== null && $avgDo < 5.0) || $abnormalPhCount > 0) {
+                    $riskLevel = 'warning';
+                }
+
+                // Process upazilas for this district
+                $upazilaList = [];
+                $districtUpazilas = $upazilaRows->get($districtName, collect());
+
+                foreach ($districtUpazilas as $uRow) {
+                    $uName = (string) $uRow->upazila_name;
+                    $uHypoxia = (int) $uRow->hypoxia_count;
+                    $uAvgDo = $uRow->avg_do !== null ? round((float) $uRow->avg_do, 2) : null;
+
+                    $uRisk = 'optimal';
+                    if ($uHypoxia > 0 || ($uAvgDo !== null && $uAvgDo < 4.0)) {
+                        $uRisk = 'critical';
+                    } elseif ($uAvgDo !== null && $uAvgDo < 5.0) {
+                        $uRisk = 'warning';
+                    }
+
+                    // Top 3 critical farms for this upazila
+                    $criticalKey = "{$districtName}::{$uName}";
+                    $recentCriticalAlerts = $criticalLogs->get($criticalKey, collect())
+                        ->take(3)
+                        ->map(fn ($c) => [
+                            'farm_id' => $c->farm_id,
+                            'farm_name' => $c->farm_name,
+                            'owner_name' => $c->owner_name,
+                            'owner_phone' => $c->owner_phone,
+                            'pond_name' => $c->pond_name,
+                            'dissolved_oxygen' => $c->dissolved_oxygen,
+                            'recorded_at' => Carbon::parse($c->recorded_at)->toIso8601String(),
+                        ])
+                        ->values();
+
+                    $upazilaList[] = [
+                        'upazila_name' => $uName,
+                        'farms_count' => (int) $uRow->farms_count,
+                        'total_readings' => (int) $uRow->total_readings,
+                        'avg_do' => $uAvgDo,
+                        'hypoxia_count' => $uHypoxia,
+                        'risk_level' => $uRisk,
+                        'critical_farms' => $recentCriticalAlerts,
+                    ];
+                }
+
+                // Sort upazilas: critical first
+                usort($upazilaList, function ($a, $b) {
+                    $order = ['critical' => 1, 'warning' => 2, 'optimal' => 3];
+                    return ($order[$a['risk_level']] ?? 4) <=> ($order[$b['risk_level']] ?? 4);
+                });
+
+                $districtHeatmap[] = [
+                    'district_name' => $districtName,
+                    'farms_count' => (int) $row->farms_count,
+                    'total_readings' => (int) $row->total_readings,
+                    'avg_do' => $avgDo,
+                    'min_do' => $minDo,
+                    'avg_ph' => $avgPh,
+                    'avg_salinity' => $avgSalinity,
+                    'avg_temperature' => $avgTemp,
+                    'hypoxia_count' => $hypoxiaCount,
+                    'abnormal_ph_count' => $abnormalPhCount,
+                    'toxic_ammonia_count' => $toxicAmmoniaCount,
+                    'risk_level' => $riskLevel,
+                    'upazilas' => $upazilaList,
+                ];
+            }
+
+            // Sort districts: critical first, then by total farms desc
+            usort($districtHeatmap, function ($a, $b) {
                 $order = ['critical' => 1, 'warning' => 2, 'optimal' => 3];
-                return ($order[$a['risk_level']] ?? 4) <=> ($order[$b['risk_level']] ?? 4);
+                $cmp = ($order[$a['risk_level']] ?? 4) <=> ($order[$b['risk_level']] ?? 4);
+                if ($cmp === 0) {
+                    return $b['farms_count'] <=> $a['farms_count'];
+                }
+                return $cmp;
             });
 
-            $districtHeatmap[] = [
-                'district_name' => $districtName,
-                'farms_count' => count($farmIdsInDistrict),
-                'total_readings' => $districtLogs->count(),
-                'avg_do' => $avgDo,
-                'min_do' => $minDo,
-                'avg_ph' => $avgPh,
-                'avg_salinity' => $avgSalinity,
-                'avg_temperature' => $avgTemp,
-                'hypoxia_count' => $hypoxiaCount,
-                'abnormal_ph_count' => $abnormalPhCount,
-                'toxic_ammonia_count' => $toxicAmmoniaCount,
-                'risk_level' => $riskLevel,
-                'upazilas' => $upazilaList,
-            ];
-        }
+            $criticalDistrictsCount = count(array_filter($districtHeatmap, fn ($d) => $d['risk_level'] === 'critical'));
+            $optimalRate = $totalReadings > 0
+                ? round((($totalReadings - $totalHypoxiaCount) / $totalReadings) * 100, 1)
+                : 100.0;
 
-        // Sort districts: critical first, then total farms desc
-        usort($districtHeatmap, function ($a, $b) {
-            $order = ['critical' => 1, 'warning' => 2, 'optimal' => 3];
-            $cmp = ($order[$a['risk_level']] ?? 4) <=> ($order[$b['risk_level']] ?? 4);
-            if ($cmp === 0) {
-                return $b['farms_count'] <=> $a['farms_count'];
-            }
-            return $cmp;
-        });
-
-        $criticalDistrictsCount = count(array_filter($districtHeatmap, fn ($d) => $d['risk_level'] === 'critical'));
-        $optimalRate = $totalReadings > 0
-            ? round((($totalReadings - $totalHypoxiaCount) / $totalReadings) * 100, 1)
-            : 100.0;
-
-        return response()->json([
-            'success' => true,
-            'message' => 'District water quality heatmap retrieved successfully',
-            'data' => [
+            return [
                 'time_window_days' => $days,
                 'summary_kpis' => [
                     'monitored_districts_count' => count($districtHeatmap),
-                    'total_farms_monitored' => count($totalFarmsSet),
+                    'total_farms_monitored' => $totalFarmsMonitored,
                     'total_readings_window' => $totalReadings,
                     'total_hypoxia_alerts' => $totalHypoxiaCount,
                     'critical_districts_count' => $criticalDistrictsCount,
                     'safe_water_compliance_percent' => $optimalRate,
                 ],
                 'districts' => $districtHeatmap,
-            ],
-        ]);
+            ];
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => 'District water quality heatmap retrieved successfully',
+            'data' => $data,
+        ])->header('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
     }
 }

@@ -141,43 +141,101 @@ class ProductController extends ApiController
                     ->orWhere('description', 'like', "%{$search}%")
                     ->orWhere('short_description', 'like', "%{$search}%");
             });
-        }
 
-        if ($request->boolean('in_stock')) {
-            $query->where(function ($subQ) {
-                $subQ->whereHas('variants', function ($vq) {
-                    $vq->where('stock', '>', 0);
-                })->orWhere(function ($fallbackQ) {
-                    $fallbackQ->whereDoesntHave('variants')->where('stock', '>', 0);
+            if ($request->boolean('in_stock')) {
+                $query->where(function ($subQ) {
+                    $subQ->whereHas('variants', function ($vq) {
+                        $vq->where('stock', '>', 0);
+                    })->orWhere(function ($fallbackQ) {
+                        $fallbackQ->whereDoesntHave('variants')->where('stock', '>', 0);
+                    });
                 });
-            });
+            }
+
+            $sort = $request->query('sort');
+            if ($sort === 'price_asc') {
+                $query->orderBy('price', 'asc');
+            } elseif ($sort === 'price_desc') {
+                $query->orderBy('price', 'desc');
+            } elseif ($sort === 'name_asc') {
+                $query->orderBy('name', 'asc');
+            } else {
+                $query->latest();
+            }
+
+            $limit = max(1, min((int) ($request->query('per_page') ?? 24), 50));
+            $paginated = $query->paginate($limit);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Products retrieved successfully',
+                'data' => ProductResource::collection($paginated->items()),
+                'meta' => [
+                    'current_page' => $paginated->currentPage(),
+                    'last_page' => $paginated->lastPage(),
+                    'per_page' => $paginated->perPage(),
+                    'total' => $paginated->total(),
+                ],
+            ]);
         }
 
-        $sort = $request->query('sort');
-        if ($sort === 'price_asc') {
-            $query->orderBy('price', 'asc');
-        } elseif ($sort === 'price_desc') {
-            $query->orderBy('price', 'desc');
-        } elseif ($sort === 'name_asc') {
-            $query->orderBy('name', 'asc');
-        } else {
-            $query->latest();
-        }
+        // Standard Catalog Browsing: cached with versioning to eliminate database bottlenecks
+        $version = \Illuminate\Support\Facades\Cache::get('products_catalog_version', 1);
+        $cacheParams = $request->only(['category', 'in_stock', 'sort', 'page', 'per_page']);
+        ksort($cacheParams);
+        $cacheKey = "storefront_products_v{$version}_" . md5(http_build_query($cacheParams));
 
-        $limit = max(1, min((int) ($request->query('per_page') ?? 24), 50));
-        $paginated = $query->paginate($limit);
+        $result = \Illuminate\Support\Facades\Cache::remember($cacheKey, 300, function () use ($request, $resolvedCategory) {
+            $query = Product::where('is_active', true)
+                ->with(['variants', 'images'])
+                ->withAvg('reviews', 'rating')
+                ->withCount('reviews');
+
+            if ($resolvedCategory !== null) {
+                $query->where('category', $resolvedCategory);
+            }
+
+            if ($request->boolean('in_stock')) {
+                $query->where(function ($subQ) {
+                    $subQ->whereHas('variants', function ($vq) {
+                        $vq->where('stock', '>', 0);
+                    })->orWhere(function ($fallbackQ) {
+                        $fallbackQ->whereDoesntHave('variants')->where('stock', '>', 0);
+                    });
+                });
+            }
+
+            $sort = $request->query('sort');
+            if ($sort === 'price_asc') {
+                $query->orderBy('price', 'asc');
+            } elseif ($sort === 'price_desc') {
+                $query->orderBy('price', 'desc');
+            } elseif ($sort === 'name_asc') {
+                $query->orderBy('name', 'asc');
+            } else {
+                $query->latest();
+            }
+
+            $limit = max(1, min((int) ($request->query('per_page') ?? 24), 50));
+            $paginated = $query->paginate($limit);
+
+            return [
+                'data' => ProductResource::collection($paginated->items())->resolve(),
+                'meta' => [
+                    'current_page' => $paginated->currentPage(),
+                    'last_page' => $paginated->lastPage(),
+                    'per_page' => $paginated->perPage(),
+                    'total' => $paginated->total(),
+                ],
+            ];
+        });
 
         return response()->json([
             'success' => true,
             'message' => 'Products retrieved successfully',
-            'data' => ProductResource::collection($paginated->items()),
-            'meta' => [
-                'current_page' => $paginated->currentPage(),
-                'last_page' => $paginated->lastPage(),
-                'per_page' => $paginated->perPage(),
-                'total' => $paginated->total(),
-            ],
-        ]);
+            'data' => $result['data'],
+            'meta' => $result['meta'],
+        ])->header('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
     }
 
     /**
@@ -187,11 +245,16 @@ class ProductController extends ApiController
     {
         abort_if(! $product->is_active, 404, 'Product not found or inactive.');
 
-        $product->load(['variants', 'images', 'specs', 'documents', 'reviews.user']);
+        $cacheKey = 'product_detail_' . $product->id;
+        $data = \Illuminate\Support\Facades\Cache::remember($cacheKey, 600, function () use ($product) {
+            $product->load(['variants', 'images', 'specs', 'documents', 'reviews.user']);
+            return (new ProductResource($product))->resolve();
+        });
 
-        return $this->successResponse(
-            new ProductResource($product),
-            'Product retrieved successfully'
-        );
+        return response()->json([
+            'success' => true,
+            'message' => 'Product retrieved successfully',
+            'data' => $data,
+        ])->header('Cache-Control', 'public, max-age=120, stale-while-revalidate=600');
     }
 }

@@ -36,6 +36,29 @@ class ProductReview extends Model
     }
 
     /**
+     * Boot model events for automatic cache invalidation.
+     */
+    protected static function booted(): void
+    {
+        static::saved(function (ProductReview $review) {
+            \Illuminate\Support\Facades\Cache::forget('product_detail_' . $review->product_id);
+            try {
+                \Illuminate\Support\Facades\Cache::increment('product_reviews_v_' . $review->product_id);
+            } catch (\Throwable) {
+                \Illuminate\Support\Facades\Cache::put('product_reviews_v_' . $review->product_id, time(), 86400 * 30);
+            }
+        });
+        static::deleted(function (ProductReview $review) {
+            \Illuminate\Support\Facades\Cache::forget('product_detail_' . $review->product_id);
+            try {
+                \Illuminate\Support\Facades\Cache::increment('product_reviews_v_' . $review->product_id);
+            } catch (\Throwable) {
+                \Illuminate\Support\Facades\Cache::put('product_reviews_v_' . $review->product_id, time(), 86400 * 30);
+            }
+        });
+    }
+
+    /**
      * Get the reviewed product.
      *
      * @return BelongsTo<Product, $this>

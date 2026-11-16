@@ -62,11 +62,23 @@ class Product extends Model
      */
     protected static function booted(): void
     {
-        static::saved(function () {
+        static::saved(function (Product $product) {
             \Illuminate\Support\Facades\Cache::forget('storefront_featured_products');
+            \Illuminate\Support\Facades\Cache::forget('product_detail_' . $product->id);
+            try {
+                \Illuminate\Support\Facades\Cache::increment('products_catalog_version');
+            } catch (\Throwable) {
+                \Illuminate\Support\Facades\Cache::put('products_catalog_version', time(), 86400 * 30);
+            }
         });
-        static::deleted(function () {
+        static::deleted(function (Product $product) {
             \Illuminate\Support\Facades\Cache::forget('storefront_featured_products');
+            \Illuminate\Support\Facades\Cache::forget('product_detail_' . $product->id);
+            try {
+                \Illuminate\Support\Facades\Cache::increment('products_catalog_version');
+            } catch (\Throwable) {
+                \Illuminate\Support\Facades\Cache::put('products_catalog_version', time(), 86400 * 30);
+            }
         });
     }
 

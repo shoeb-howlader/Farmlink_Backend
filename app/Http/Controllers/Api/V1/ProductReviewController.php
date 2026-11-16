@@ -18,33 +18,44 @@ class ProductReviewController extends ApiController
      */
     public function index(Request $request, Product $product): JsonResponse
     {
-        $query = $product->reviews()
-            ->with(['user:id,name,district']);
-
+        $page = max(1, (int) ($request->query('page', 1)));
         $sort = $request->query('sort', 'newest');
-        if ($sort === 'highest') {
-            $query->orderBy('rating', 'desc')->latest();
-        } elseif ($sort === 'lowest') {
-            $query->orderBy('rating', 'asc')->latest();
-        } else {
-            $query->latest();
-        }
+        $version = \Illuminate\Support\Facades\Cache::get('product_reviews_v_' . $product->id, 1);
+        $cacheKey = "product_reviews_{$product->id}_v{$version}_{$sort}_p{$page}";
 
-        $reviews = $query->paginate(15);
+        $result = \Illuminate\Support\Facades\Cache::remember($cacheKey, 300, function () use ($product, $sort, $page) {
+            $query = $product->reviews()
+                ->with(['user:id,name,district']);
+
+            if ($sort === 'highest') {
+                $query->orderBy('rating', 'desc')->latest();
+            } elseif ($sort === 'lowest') {
+                $query->orderBy('rating', 'asc')->latest();
+            } else {
+                $query->latest();
+            }
+
+            $reviews = $query->paginate(15, ['*'], 'page', $page);
+
+            return [
+                'data' => ProductReviewResource::collection($reviews->items())->resolve(),
+                'meta' => [
+                    'current_page' => $reviews->currentPage(),
+                    'last_page' => $reviews->lastPage(),
+                    'total' => $reviews->total(),
+                    'rating_avg' => $product->rating_avg,
+                    'rating_count' => $product->rating_count,
+                    'rating_distribution' => $product->rating_distribution,
+                ],
+            ];
+        });
 
         return response()->json([
             'success' => true,
             'message' => 'Product reviews retrieved successfully',
-            'data' => ProductReviewResource::collection($reviews->items()),
-            'meta' => [
-                'current_page' => $reviews->currentPage(),
-                'last_page' => $reviews->lastPage(),
-                'total' => $reviews->total(),
-                'rating_avg' => $product->rating_avg,
-                'rating_count' => $product->rating_count,
-                'rating_distribution' => $product->rating_distribution,
-            ],
-        ]);
+            'data' => $result['data'],
+            'meta' => $result['meta'],
+        ])->header('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
     }
 
     /**

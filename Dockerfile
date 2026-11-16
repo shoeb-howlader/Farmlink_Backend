@@ -46,6 +46,7 @@ COPY . .
 COPY docker/nginx.conf /etc/nginx/http.d/default.conf
 COPY docker/supervisord.conf /etc/supervisord.conf
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY docker/php-fpm-pool.conf /usr/local/etc/php-fpm.d/zz-custom.conf
 
 # Remove Windows CRLF line endings from entrypoint script and make executable
 RUN sed -i 's/\r$//' /usr/local/bin/entrypoint.sh && chmod +x /usr/local/bin/entrypoint.sh
