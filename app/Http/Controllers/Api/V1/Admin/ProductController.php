@@ -33,6 +33,8 @@ class ProductController extends ApiController
 
         if ($request->filled('category') && $request->query('category') !== 'all') {
             $query->where('category', $request->query('category'));
+        } elseif ($request->boolean('exclude_services')) {
+            $query->where('category', '!=', 'Services');
         }
 
         if ($request->filled('status') && $request->query('status') !== 'all') {
@@ -99,14 +101,22 @@ class ProductController extends ApiController
         $perPage = max(1, min((int) $request->query('per_page', 15), 100));
         $paginated = $query->paginate($perPage);
 
-        $lowStockCount = Product::where('is_active', true)->where(function ($q) {
+        $lowStockQuery = Product::where('is_active', true);
+        if ($request->boolean('exclude_services')) {
+            $lowStockQuery->where('category', '!=', 'Services');
+        }
+        $lowStockCount = $lowStockQuery->where(function ($q) {
             $q->whereColumn('stock', '<=', 'low_stock_threshold')
               ->orWhereHas('variants', function ($qv) {
                   $qv->whereColumn('stock', '<=', 'low_stock_threshold');
               });
         })->count();
 
-        $outOfStockCount = Product::where('is_active', true)->where(function ($q) {
+        $outOfStockQuery = Product::where('is_active', true);
+        if ($request->boolean('exclude_services')) {
+            $outOfStockQuery->where('category', '!=', 'Services');
+        }
+        $outOfStockCount = $outOfStockQuery->where(function ($q) {
             $q->where('stock', '<=', 0)
               ->orWhereDoesntHave('variants', function ($qv) {
                   $qv->where('stock', '>', 0);

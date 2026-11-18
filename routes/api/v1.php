@@ -29,6 +29,7 @@ use App\Http\Controllers\Api\V1\LeadInquiryController;
 use App\Http\Controllers\Api\V1\LocationController;
 use App\Http\Controllers\Api\V1\NotificationController;
 use App\Http\Controllers\Api\V1\Admin\PosController as AdminPosController;
+use App\Http\Controllers\Api\V1\Admin\WalkInConsultationController;
 use App\Http\Controllers\Api\V1\OtpController;
 use App\Http\Controllers\Api\V1\OrderController;
 use App\Http\Controllers\Api\V1\PaymentController;
@@ -251,9 +252,13 @@ Route::middleware('auth:sanctum')->group(function () {
         // Products Catalog (Read-Only for POS and Browsing)
         Route::get('/products', [AdminProductController::class, 'index'])->name('products.index');
         Route::get('/products/{product}', [AdminProductController::class, 'show'])->name('products.show');
+        Route::get('/settings/services', [\App\Http\Controllers\Api\V1\Admin\ServiceFeeController::class, 'index'])->name('settings.services.index');
+        Route::get('/settings/lab-test-parameters', [\App\Http\Controllers\Api\V1\Admin\LabTestParameterController::class, 'index'])->name('settings.lab-parameters.index');
 
-        // Point of Sale / Assisted Sale
+        // Point of Sale / Assisted Sale & Walk-in Clinic
         Route::post('/pos/sale', [AdminPosController::class, 'store'])->name('pos.sale');
+        Route::post('/pos/walk-in-consultation', [WalkInConsultationController::class, 'store'])->name('pos.walk-in-consultation.store');
+        Route::get('/pos/walk-in-history/{farmerId}', [WalkInConsultationController::class, 'history'])->name('pos.walk-in-history');
 
         // Orders (Read-Only list and invoices for DEO)
         Route::get('/orders', [AdminOrderController::class, 'index'])->name('orders.index');
@@ -411,6 +416,18 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::post('/payment-methods', [\App\Http\Controllers\Api\V1\Admin\PaymentMethodController::class, 'store'])->name('payment-methods.store');
             Route::put('/payment-methods/{paymentMethod}', [\App\Http\Controllers\Api\V1\Admin\PaymentMethodController::class, 'update'])->name('payment-methods.update');
             Route::patch('/payment-methods/{paymentMethod}/toggle', [\App\Http\Controllers\Api\V1\Admin\PaymentMethodController::class, 'toggleActive'])->name('payment-methods.toggle');
+
+            // In-Store Diagnostic Services & Consultancy Fees Management
+            Route::post('/settings/services', [\App\Http\Controllers\Api\V1\Admin\ServiceFeeController::class, 'store'])->name('settings.services.store');
+            Route::put('/settings/services/{id}', [\App\Http\Controllers\Api\V1\Admin\ServiceFeeController::class, 'update'])->name('settings.services.update');
+            Route::patch('/settings/services/{id}/toggle', [\App\Http\Controllers\Api\V1\Admin\ServiceFeeController::class, 'toggle'])->name('settings.services.toggle');
+            Route::delete('/settings/services/{id}', [\App\Http\Controllers\Api\V1\Admin\ServiceFeeController::class, 'destroy'])->name('settings.services.destroy');
+
+            // Lab Test Parameters & Reference Ranges Library
+            Route::post('/settings/lab-test-parameters', [\App\Http\Controllers\Api\V1\Admin\LabTestParameterController::class, 'store'])->name('settings.lab-parameters.store');
+            Route::put('/settings/lab-test-parameters/{id}', [\App\Http\Controllers\Api\V1\Admin\LabTestParameterController::class, 'update'])->name('settings.lab-parameters.update');
+            Route::patch('/settings/lab-test-parameters/{id}/toggle', [\App\Http\Controllers\Api\V1\Admin\LabTestParameterController::class, 'toggle'])->name('settings.lab-parameters.toggle');
+            Route::delete('/settings/lab-test-parameters/{id}', [\App\Http\Controllers\Api\V1\Admin\LabTestParameterController::class, 'destroy'])->name('settings.lab-parameters.destroy');
         });
     });
 });
